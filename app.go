@@ -17,6 +17,12 @@ type ApplicationInitHandle func(container *dig.Container) error
 
 func NewApplication(handle ApplicationInitHandle) (*Application, error) {
 	container := dig.New()
+	// 日志
+	if err := container.Provide(NewLogger); err != nil {
+		return nil, err
+	}
+
+	// 路由
 	router := echo.New()
 	router.HTTPErrorHandler = func(err error, ctx echo.Context) {
 		code := http.StatusInternalServerError
