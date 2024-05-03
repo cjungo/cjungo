@@ -3,6 +3,7 @@ package cjungo
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -51,6 +52,33 @@ func NewHttpServer(
 	}
 }
 
-func LoadHttpServerConfFromEnv() *HttpServerConf {
-	return &HttpServerConf{}
+func LoadHttpServerConfFromEnv() (*HttpServerConf, error) {
+	conf := &HttpServerConf{}
+	host := os.Getenv("CJUNGO_HTTP_HOST")
+	if len(host) > 0 {
+		conf.Host = &host
+	}
+
+	if err := GetEnvInt("CJUNGO_HTTP_PORT", func(v uint16) {
+		conf.Port = &v
+	}); err != nil {
+		return nil, err
+	}
+	if err := GetEnvDuration("CJUNGO_HTTP_READ_TIMEOUT", func(v time.Duration) {
+		conf.ReadTimeout = &v
+	}); err != nil {
+		return nil, err
+	}
+	if err := GetEnvDuration("CJUNGO_HTTP_WRITE_TIMEOUT", func(v time.Duration) {
+		conf.WriteTimeout = &v
+	}); err != nil {
+		return nil, err
+	}
+	if err := GetEnvInt("CJUNGO_HTTP_MAX_HEADER_BYTES", func(v int) {
+		conf.MaxHeaderBytes = &v
+	}); err != nil {
+		return nil, err
+	}
+
+	return conf, nil
 }
