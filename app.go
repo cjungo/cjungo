@@ -10,13 +10,15 @@ import (
 )
 
 type Application struct {
-	container *dig.Container
+	container DiContainer
 }
 
-type ApplicationInitHandle func(container *dig.Container) error
+type ApplicationInitHandle func(container DiContainer) error
 
 func NewApplication(handle ApplicationInitHandle) (*Application, error) {
-	container := dig.New()
+	container := &DiSimpleContainer{
+		Container: *dig.New(),
+	}
 	// 日志
 	if err := container.Provide(NewLogger); err != nil {
 		return nil, err
