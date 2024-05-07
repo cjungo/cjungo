@@ -3,6 +3,7 @@ package cjungo
 import (
 	"net/http"
 
+	"github.com/rs/zerolog"
 	"go.uber.org/dig"
 )
 
@@ -41,17 +42,25 @@ func NewApplication(handle ApplicationInitHandle) (*Application, error) {
 	}, nil
 }
 
-func (app *Application) Run() error {
-	if err := app.container.Invoke(func(queue *TaskQueue) error {
-		return queue.Run()
-	}); err != nil {
-		return err
-	}
+type ApplicationRunDi struct {
+	dig.In
+	Logger *zerolog.Logger
+	Server *http.Server
+	Queue  *TaskQueue `optional:"true"`
+}
 
-	return app.container.Invoke(func(server *http.Server) error {
-		if err := server.ListenAndServe(); err != nil {
-			return err
+func (app *Application) Run() error {
+	return app.container.Invoke(func(di ApplicationRunDi) error {
+		if di.Queue != nil {
+			di.Logger.Info().Msg("启动队列...")
+			err := di.Queue.Run()
+			if err != nil {
+				return err
+			}
+		} else {
+			di.Logger.Info().Msg("没有启动队列")
 		}
-		return nil
+		di.Logger.Info().Msg("启动服务器")
+		return di.Server.ListenAndServe()
 	})
 }
