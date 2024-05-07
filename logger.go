@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog"
+	"go.uber.org/dig"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -19,25 +20,38 @@ type LoggerConf struct {
 	IsCompress *bool
 }
 
-func NewLogger(conf *LoggerConf) *zerolog.Logger {
+type NewLoggerDi struct {
+	dig.In
+	Conf *LoggerConf `optional:"true"`
+}
+
+func NewLogger(di NewLoggerDi) *zerolog.Logger {
 	writers := []io.Writer{}
 
-	if conf.IsOutputConsole {
+	// 提供配置
+	if di.Conf != nil {
+		if di.Conf.IsOutputConsole {
+			consoleWriter := zerolog.ConsoleWriter{
+				Out: os.Stdout,
+			}
+			writers = append(writers, consoleWriter)
+		}
+
+		if strings.HasSuffix(di.Conf.Filename, ".log") {
+			lumberLogger := &lumberjack.Logger{
+				Filename:   di.Conf.Filename,
+				MaxSize:    GetOrDefault(di.Conf.MaxSize, 4),
+				MaxBackups: GetOrDefault(di.Conf.MaxBackups, 3),
+				MaxAge:     GetOrDefault(di.Conf.MaxAge, 14),
+				Compress:   GetOrDefault(di.Conf.IsCompress, true),
+			}
+			writers = append(writers, lumberLogger)
+		}
+	} else { // 默认配置
 		consoleWriter := zerolog.ConsoleWriter{
 			Out: os.Stdout,
 		}
 		writers = append(writers, consoleWriter)
-	}
-
-	if strings.HasSuffix(conf.Filename, ".log") {
-		lumberLogger := &lumberjack.Logger{
-			Filename:   conf.Filename,
-			MaxSize:    GetOrDefault(conf.MaxSize, 4),
-			MaxBackups: GetOrDefault(conf.MaxBackups, 3),
-			MaxAge:     GetOrDefault(conf.MaxAge, 14),
-			Compress:   GetOrDefault(conf.IsCompress, true),
-		}
-		writers = append(writers, lumberLogger)
 	}
 
 	multiWriter := zerolog.MultiLevelWriter(writers...)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
+	"go.uber.org/dig"
 )
 
 type HttpServerConf struct {
@@ -18,22 +19,42 @@ type HttpServerConf struct {
 	MaxHeaderBytes *int
 }
 
-func NewHttpServer(
-	conf *HttpServerConf,
-	handler http.Handler,
-	logger *zerolog.Logger,
-) *http.Server {
-	host := GetOrDefault(conf.Host, "127.0.0.1")
-	port := GetOrDefault(conf.Port, 12345)
+type NewHttpServerDi struct {
+	dig.In
+	Conf    *HttpServerConf `optional:"true"`
+	Handler http.Handler
+	Logger  *zerolog.Logger
+}
+
+func NewHttpServer(di NewHttpServerDi) *http.Server {
+	defaultHost := "127.0.0.1"
+	defaultPort := uint16(12345)
+	defaultReadTimeout := 10 * time.Second
+	defaultWriteTimeout := 10 * time.Second
+	defaultMaxHeaderBytes := 1000000
+	if di.Conf == nil {
+		di.Conf = &HttpServerConf{
+			Host:           &defaultHost,
+			Port:           &defaultPort,
+			ReadTimeout:    &defaultReadTimeout,
+			WriteTimeout:   &defaultWriteTimeout,
+			MaxHeaderBytes: &defaultMaxHeaderBytes,
+		}
+		di.Logger.Info().Msg("服务器使用默认配置")
+	} else {
+		di.Logger.Info().Msg("服务器加载配置")
+	}
+	host := GetOrDefault(di.Conf.Host, defaultHost)
+	port := GetOrDefault(di.Conf.Port, defaultPort)
 	address := fmt.Sprintf("%s:%d", host, port)
-	readTimeout := GetOrDefault(conf.ReadTimeout, 10*time.Second)
-	writeTimeout := GetOrDefault(conf.WriteTimeout, 10*time.Second)
-	maxHeaderBytes := GetOrDefault(conf.MaxHeaderBytes, 1000000)
+	readTimeout := GetOrDefault(di.Conf.ReadTimeout, defaultReadTimeout)
+	writeTimeout := GetOrDefault(di.Conf.WriteTimeout, defaultWriteTimeout)
+	maxHeaderBytes := GetOrDefault(di.Conf.MaxHeaderBytes, defaultMaxHeaderBytes)
 
 	// 输出服务器信息
-	if e := handler.(*echo.Echo); e != nil {
+	if e := di.Handler.(*echo.Echo); e != nil {
 		for i, r := range e.Routes() {
-			logger.Info().
+			di.Logger.Info().
 				Int("index", i).
 				Str("name", r.Name).
 				Str("path", r.Path).
@@ -41,11 +62,11 @@ func NewHttpServer(
 				Msg("route:")
 		}
 	}
-	logger.Info().Str("address", address).Msg("http server listen:")
+	di.Logger.Info().Str("address", address).Msg("http server listen:")
 
 	return &http.Server{
 		Addr:           address,
-		Handler:        handler,
+		Handler:        di.Handler,
 		ReadTimeout:    readTimeout,
 		WriteTimeout:   writeTimeout,
 		MaxHeaderBytes: maxHeaderBytes,
