@@ -1,6 +1,7 @@
 package cjungo
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
@@ -11,6 +12,7 @@ type HttpContext interface {
 	RespOk() error
 	Resp(any) error
 	RespBad(any) error
+	RespBadF(string, ...any) error
 }
 
 type HttpSimpleContext struct {
@@ -43,6 +45,16 @@ func (ctx *HttpSimpleContext) RespBad(data any) error {
 		map[string]any{
 			"code": -1,
 			"data": data,
+		},
+	)
+}
+
+func (ctx *HttpSimpleContext) RespBadF(format string, data ...any) error {
+	return ctx.JSON(
+		http.StatusBadRequest,
+		map[string]any{
+			"code": -1,
+			"data": fmt.Sprintf(format, data...),
 		},
 	)
 }

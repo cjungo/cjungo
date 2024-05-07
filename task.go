@@ -9,13 +9,15 @@ import (
 	"go.uber.org/dig"
 )
 
+type TaskStatus string
+
 const (
-	TASK_STATUS_PENDING    = 0
-	TASK_STATUS_PROCESSING = iota
-	TASK_STATUS_START
-	TASK_STATUS_OK
-	TASK_STATUS_FAILED           = -1
-	TASK_STATUS_NOT_HAVE_PROCESS = -2
+	TASK_STATUS_PENDING          TaskStatus = "Pending"
+	TASK_STATUS_PROCESSING       TaskStatus = "Processing"
+	TASK_STATUS_START            TaskStatus = "Start"
+	TASK_STATUS_OK               TaskStatus = "Ok"
+	TASK_STATUS_FAILED           TaskStatus = "Failed"
+	TASK_STATUS_NOT_HAVE_PROCESS TaskStatus = "Not have process"
 )
 
 type TaskConfig struct {
@@ -24,7 +26,7 @@ type TaskConfig struct {
 type TaskResult struct {
 	ID     string
 	Name   string
-	Status int8
+	Status TaskStatus
 	Data   TaskResultMessage
 }
 
@@ -66,7 +68,7 @@ func NewTaskQueueHandle(initialize func(*TaskQueue) error) TaskQueueProvide {
 	}
 }
 
-func (queue *TaskQueue) setStatus(action *TaskAction, status int8) {
+func (queue *TaskQueue) setStatus(action *TaskAction, status TaskStatus) {
 	if r, ok := queue.results.Load(action.ID); ok {
 		r.(*TaskResult).Status = status
 		queue.results.Store(action.ID, r)
@@ -151,7 +153,7 @@ func (queue *TaskQueue) QueryTask(id string) (*TaskResult, error) {
 	if result, ok := queue.results.Load(id); ok {
 		return result.(*TaskResult), nil
 	}
-	return nil, fmt.Errorf("没有改 ID：%s 的队列信息", id)
+	return nil, fmt.Errorf("没有 ID：%s 的队列信息", id)
 }
 
 func LoadTaskConfFromEnv() (*TaskConfig, error) {
