@@ -12,7 +12,7 @@ type DiContainer interface {
 }
 
 type DiSimpleContainer struct {
-	dig.Container
+	*dig.Container
 }
 
 func (container *DiSimpleContainer) ProvideController(controllers []any) error {

@@ -14,7 +14,7 @@ type ApplicationInitHandle func(container DiContainer) error
 
 func NewApplication(handle ApplicationInitHandle) (*Application, error) {
 	container := &DiSimpleContainer{
-		Container: *dig.New(),
+		Container: dig.New(),
 	}
 	// 日志
 	if err := container.Provide(NewLogger); err != nil {
