@@ -62,6 +62,12 @@ func NewApplication(handle ApplicationInitHandle) (*Application, error) {
 }
 
 func (app *Application) Run() error {
+	if err := app.container.Invoke(func(queue *TaskQueue) error {
+		return queue.Run()
+	}); err != nil {
+		return err
+	}
+
 	return app.container.Invoke(func(server *http.Server) error {
 		if err := server.ListenAndServe(); err != nil {
 			return err
