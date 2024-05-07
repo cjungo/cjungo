@@ -32,19 +32,20 @@ func NewApplication(handle ApplicationInitHandle) (*Application, error) {
 	// 路由
 	if err := container.Provide(func(logger *zerolog.Logger) *echo.Echo {
 		router := echo.New()
-		router.HTTPErrorHandler = func(err error, ctx echo.Context) {
+
+		// 使用自定义上下文
+		router.Use(ResetContext)
+
+		// 异常处理句柄
+		router.HTTPErrorHandler = func(err error, c echo.Context) {
+			ctx := c.(HttpContext)
 			code := http.StatusInternalServerError
 			if he, ok := err.(*echo.HTTPError); ok {
 				code = he.Code
 			}
-			logger.Info().Str("error", fmt.Sprintf("%v", err)).Msg("error:")
-			ctx.JSON(
-				http.StatusBadRequest,
-				map[string]any{
-					"code":    -1,
-					"message": fmt.Sprintf("请求错误(%d)", code),
-				},
-			)
+			tip := fmt.Sprintf("%d: %v", code, err)
+			logger.Info().Str("error", tip).Msg("error:")
+			ctx.RespBad(tip)
 		}
 		return router
 	}); err != nil {
