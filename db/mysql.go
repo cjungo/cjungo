@@ -10,6 +10,7 @@ import (
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	glog "gorm.io/gorm/logger"
+	"gorm.io/plugin/dbresolver"
 )
 
 type MySqlConf struct {
@@ -70,6 +71,15 @@ func NewMySqlHandle(initialize func(*MySql) error) MySqlProvide {
 			Logger: &MySqlLogger{subject: logger},
 		})
 		if err != nil {
+			return nil, err
+		}
+		if err = db.Use(
+			dbresolver.Register(dbresolver.Config{}).
+				SetConnMaxIdleTime(30 * time.Minute).
+				SetConnMaxLifetime(2 * time.Hour).
+				SetMaxIdleConns(32).
+				SetMaxOpenConns(64),
+		); err != nil {
 			return nil, err
 		}
 

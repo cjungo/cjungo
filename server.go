@@ -17,6 +17,7 @@ type HttpServerConf struct {
 	ReadTimeout    *time.Duration
 	WriteTimeout   *time.Duration
 	MaxHeaderBytes *int
+	IsDumpBody     bool
 }
 
 type NewHttpServerDi struct {
@@ -98,6 +99,12 @@ func LoadHttpServerConfFromEnv(logger *zerolog.Logger) (*HttpServerConf, error) 
 	}
 	if err := GetEnvInt("CJUNGO_HTTP_MAX_HEADER_BYTES", func(v int) {
 		conf.MaxHeaderBytes = &v
+	}); err != nil {
+		return nil, err
+	}
+
+	if err := GetEnvBool("CJUNGO_HTTP_IS_DUMP_BODY", func(v bool) {
+		conf.IsDumpBody = v
 	}); err != nil {
 		return nil, err
 	}

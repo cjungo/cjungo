@@ -6,7 +6,9 @@ import (
 	"net/http"
 
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/rs/zerolog"
+	"go.uber.org/dig"
 )
 
 // TODO 封装 echo.Echo 其他方法
@@ -94,7 +96,13 @@ func (group *HttpSimpleGroup) Group(prefix string, m ...echo.MiddlewareFunc) (g 
 	return &HttpSimpleGroup{subject: group.subject.Group(prefix, m...)}
 }
 
-func NewRouter(logger *zerolog.Logger) HttpRouter {
+type NewRouterDi struct {
+	dig.In
+	Logger *zerolog.Logger
+	Conf   *HttpServerConf `optional:"true"`
+}
+
+func NewRouter(di NewRouterDi) HttpRouter {
 	router := echo.New()
 
 	router.IPExtractor = echo.ExtractIPFromXFFHeader(
@@ -106,6 +114,17 @@ func NewRouter(logger *zerolog.Logger) HttpRouter {
 	// 使用自定义上下文
 	router.Use(ResetContext)
 
+	if di.Conf != nil && di.Conf.IsDumpBody {
+		router.Use(middleware.BodyDump(func(ctx echo.Context, request, response []byte) {
+			di.Logger.Info().
+				Str("body", string(request)).
+				Msg("请求")
+			di.Logger.Info().
+				Str("body", string(response)).
+				Msg("响应")
+		}))
+	}
+
 	// 异常处理句柄
 	router.HTTPErrorHandler = func(err error, c echo.Context) {
 		ctx := c.(HttpContext)
@@ -114,7 +133,7 @@ func NewRouter(logger *zerolog.Logger) HttpRouter {
 			code = he.Code
 		}
 		tip := fmt.Sprintf("%d: %v", code, err)
-		logger.Info().Str("error", tip).Msg("error:")
+		di.Logger.Info().Str("error", tip).Msg("error:")
 		ctx.RespBad(tip)
 	}
 	return &HttpSimpleRouter{subject: router}
