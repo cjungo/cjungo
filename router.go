@@ -17,6 +17,7 @@ type HttpRouterGroup interface {
 	Any(path string, handler HttpHandlerFunc, middleware ...echo.MiddlewareFunc) []*echo.Route
 	POST(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
 	GET(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
+	PUT(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
 	Group(prefix string, m ...echo.MiddlewareFunc) (g HttpRouterGroup)
 }
 
@@ -40,6 +41,10 @@ func wrapContext(h HttpHandlerFunc) echo.HandlerFunc {
 
 func (router *HttpSimpleRouter) GET(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
 	return router.subject.GET(path, wrapContext(h), m...)
+}
+
+func (router *HttpSimpleRouter) PUT(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
+	return router.subject.PUT(path, wrapContext(h), m...)
 }
 
 func (router *HttpSimpleRouter) POST(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
@@ -75,6 +80,10 @@ func (group *HttpSimpleGroup) Any(path string, h HttpHandlerFunc, m ...echo.Midd
 
 func (group *HttpSimpleGroup) GET(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
 	return group.subject.GET(path, wrapContext(h), m...)
+}
+
+func (group *HttpSimpleGroup) PUT(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
+	return group.subject.PUT(path, wrapContext(h), m...)
 }
 
 func (group *HttpSimpleGroup) POST(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {

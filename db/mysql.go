@@ -1,12 +1,15 @@
 package db
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/cjungo/cjungo"
 	"github.com/rs/zerolog"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	glog "gorm.io/gorm/logger"
 )
 
 type MySqlConf struct {
@@ -21,10 +24,40 @@ type MySql struct {
 	*gorm.DB
 }
 
-type MySqlProvide func(*MySqlConf) (*MySql, error)
+type MySqlProvide func(*MySqlConf, *zerolog.Logger) (*MySql, error)
+
+type MySqlLogger struct {
+	subject *zerolog.Logger
+}
+
+func (logger *MySqlLogger) LogMode(level glog.LogLevel) glog.Interface {
+	logger.subject.Info().Msg("[MYSQL] LogMode")
+	return logger
+}
+func (logger *MySqlLogger) Info(ctx context.Context, f string, a ...any) {
+	logger.subject.Info().Msg("[MYSQL] Info")
+	logger.subject.Info().Msgf(f, a...)
+}
+func (logger *MySqlLogger) Warn(ctx context.Context, f string, a ...any) {
+	logger.subject.Info().Msg("[MYSQL] Warn")
+	logger.subject.Warn().Msgf(f, a...)
+}
+func (logger *MySqlLogger) Error(ctx context.Context, f string, a ...any) {
+	logger.subject.Info().Msg("[MYSQL] Error")
+	logger.subject.Error().Msgf(f, a...)
+}
+func (logger *MySqlLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+	sql, rowsAffected := fc()
+	logger.subject.Info().
+		Time("begin", begin).
+		Err(err).
+		Str("sql", sql).
+		Int64("rowsAffected", rowsAffected).
+		Msg("[MYSQL]")
+}
 
 func NewMySqlHandle(initialize func(*MySql) error) MySqlProvide {
-	return func(conf *MySqlConf) (*MySql, error) {
+	return func(conf *MySqlConf, logger *zerolog.Logger) (*MySql, error) {
 		dns := fmt.Sprintf(
 			"%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 			conf.User,
@@ -33,10 +66,13 @@ func NewMySqlHandle(initialize func(*MySql) error) MySqlProvide {
 			conf.Port,
 			conf.Name,
 		)
-		db, err := gorm.Open(mysql.Open(dns), &gorm.Config{})
+		db, err := gorm.Open(mysql.Open(dns), &gorm.Config{
+			Logger: &MySqlLogger{subject: logger},
+		})
 		if err != nil {
 			return nil, err
 		}
+
 		result := &MySql{DB: db}
 		return result, initialize(result)
 	}
