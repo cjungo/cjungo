@@ -59,10 +59,10 @@ func NewHttpServer(di NewHttpServerDi) *http.Server {
 				Str("name", r.Name).
 				Str("path", r.Path).
 				Str("method", r.Method).
-				Msg("route:")
+				Msg("启用路由")
 		}
 	}
-	di.Logger.Info().Str("address", address).Msg("http server listen:")
+	di.Logger.Info().Str("address", address).Msg("服务器监听:")
 
 	return &http.Server{
 		Addr:           address,
@@ -73,7 +73,8 @@ func NewHttpServer(di NewHttpServerDi) *http.Server {
 	}
 }
 
-func LoadHttpServerConfFromEnv() (*HttpServerConf, error) {
+func LoadHttpServerConfFromEnv(logger *zerolog.Logger) (*HttpServerConf, error) {
+	logger.Info().Msg("通过环境变量配置服务器")
 	conf := &HttpServerConf{}
 	host := os.Getenv("CJUNGO_HTTP_HOST")
 	if len(host) > 0 {

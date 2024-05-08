@@ -56,6 +56,13 @@ func NewLogger(di NewLoggerDi) *zerolog.Logger {
 
 	multiWriter := zerolog.MultiLevelWriter(writers...)
 	logger := zerolog.New(multiWriter).With().Timestamp().Logger()
+
+	if di.Conf != nil {
+		logger.Info().Msg("日志加载配置")
+	} else {
+		logger.Info().Msg("日志默认配置")
+	}
+
 	return &logger
 }
 

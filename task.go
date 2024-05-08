@@ -156,7 +156,8 @@ func (queue *TaskQueue) QueryTask(id string) (*TaskResult, error) {
 	return nil, fmt.Errorf("没有 ID：%s 的队列信息", id)
 }
 
-func LoadTaskConfFromEnv() (*TaskConfig, error) {
+func LoadTaskConfFromEnv(logger *zerolog.Logger) (*TaskConfig, error) {
+	logger.Info().Msg("通过环境变量配置任务队列")
 	conf := &TaskConfig{}
 	return conf, nil
 }

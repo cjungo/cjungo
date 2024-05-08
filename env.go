@@ -1,6 +1,7 @@
 package cjungo
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -36,6 +37,15 @@ func GetEnvInt[T int | uint16](name string, onResult func(T)) error {
 		onResult(r)
 	}
 	return nil
+}
+
+func GetEnvStringMust(name string, onResult func(string)) error {
+	text := os.Getenv(name)
+	if len(text) > 0 {
+		onResult(text)
+		return nil
+	}
+	return fmt.Errorf("环境变量 %s 不能为空", name)
 }
 
 func GetEnvDuration(name string, onResult func(time.Duration)) error {
