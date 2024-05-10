@@ -24,7 +24,7 @@ func MakeJwtToken(claims jwt.Claims) (string, error) {
 	return fmt.Sprintf("Bearer %s", tokenString), nil
 }
 
-func NewJwtAuthMiddleware(onResult func(*jwt.Token) error) func(echo.HandlerFunc) echo.HandlerFunc {
+func NewJwtAuthMiddleware(onResult func(*jwt.Token) error) echo.MiddlewareFunc {
 	key := os.Getenv("CJUNGO_JWT_KEY")
 	if len(key) <= 0 {
 		return func(next echo.HandlerFunc) echo.HandlerFunc {
