@@ -140,17 +140,6 @@ func NewRouter(di NewRouterDi) HttpRouter {
 	router.Use(ResetContext)
 
 	if di.Conf != nil && di.Conf.IsDumpBody {
-		// 此中间件 内部调用了 ctx.Error 会使得 HTTPErrorHandler 被调用多一次。不可用
-		// router.Use(middleware.BodyDump(func(ctx echo.Context, request, response []byte) {
-		// 	di.Logger.Info().
-		// 		Str("body", string(request)).
-		// 		Msg("请求")
-
-		// 	// TODO 当启用 GZIP 压缩时，信息在日志中是压缩后的数据
-		// 	di.Logger.Info().
-		// 		Any("body", string(response)).
-		// 		Msg("响应")
-		// }))
 		router.Use(NewDumpBodyMiddleware(func(ctx HttpContext, req, resp []byte) error {
 			di.Logger.Info().
 				Str("body", string(req)).
