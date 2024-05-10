@@ -1,7 +1,6 @@
 package cjungo
 
 import (
-	"fmt"
 	"io/fs"
 	"net/http"
 
@@ -21,6 +20,7 @@ type HttpRouterGroup interface {
 	GET(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
 	PUT(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
 	Group(prefix string, m ...echo.MiddlewareFunc) (g HttpRouterGroup)
+	Use(middleware ...echo.MiddlewareFunc)
 }
 
 type HttpRouter interface {
@@ -61,6 +61,10 @@ func (router *HttpSimpleRouter) Group(prefix string, m ...echo.MiddlewareFunc) (
 	return &HttpSimpleGroup{subject: router.subject.Group(prefix, m...)}
 }
 
+func (router *HttpSimpleRouter) Use(middleware ...echo.MiddlewareFunc) {
+	router.subject.Use(middleware...)
+}
+
 func (router *HttpSimpleRouter) GetHandler() http.Handler {
 	return router.subject
 }
@@ -96,14 +100,35 @@ func (group *HttpSimpleGroup) Group(prefix string, m ...echo.MiddlewareFunc) (g 
 	return &HttpSimpleGroup{subject: group.subject.Group(prefix, m...)}
 }
 
+func (group *HttpSimpleGroup) Use(middleware ...echo.MiddlewareFunc) {
+	group.subject.Use(middleware...)
+}
+
 type NewRouterDi struct {
 	dig.In
 	Logger *zerolog.Logger
 	Conf   *HttpServerConf `optional:"true"`
 }
 
+type RouterLogger struct {
+	subject *zerolog.Logger
+}
+
+func (logger RouterLogger) Write(p []byte) (n int, err error) {
+	logger.subject.Info().RawJSON("echo", p).Msg("[HTTP]")
+	return len(p), nil
+}
+
 func NewRouter(di NewRouterDi) HttpRouter {
 	router := echo.New()
+	router.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
+		Format: `{"time":"${time_custom}","id":"${id}","remote_ip":"${remote_ip}",` +
+			`"host":"${host}","method":"${method}","uri":"${uri}","user_agent":"${user_agent}",` +
+			`"status":${status},"error":"${error}","latency":${latency},"latency_human":"${latency_human}"` +
+			`,"bytes_in":${bytes_in},"bytes_out":${bytes_out}}` + "\n",
+		CustomTimeFormat: "2006-01-02 15:04:05.000",
+		Output:           &RouterLogger{subject: di.Logger},
+	}))
 
 	router.IPExtractor = echo.ExtractIPFromXFFHeader(
 		echo.TrustLoopback(false),   // e.g. ipv4 start with 127.
@@ -115,28 +140,51 @@ func NewRouter(di NewRouterDi) HttpRouter {
 	router.Use(ResetContext)
 
 	if di.Conf != nil && di.Conf.IsDumpBody {
-		router.Use(middleware.BodyDump(func(ctx echo.Context, request, response []byte) {
+		// 此中间件 内部调用了 ctx.Error 会使得 HTTPErrorHandler 被调用多一次。不可用
+		// router.Use(middleware.BodyDump(func(ctx echo.Context, request, response []byte) {
+		// 	di.Logger.Info().
+		// 		Str("body", string(request)).
+		// 		Msg("请求")
+
+		// 	// TODO 当启用 GZIP 压缩时，信息在日志中是压缩后的数据
+		// 	di.Logger.Info().
+		// 		Any("body", string(response)).
+		// 		Msg("响应")
+		// }))
+		router.Use(NewDumpBodyMiddleware(func(ctx HttpContext, req, resp []byte) error {
 			di.Logger.Info().
-				Str("body", string(request)).
+				Str("body", string(req)).
 				Msg("请求")
 
 			// TODO 当启用 GZIP 压缩时，信息在日志中是压缩后的数据
 			di.Logger.Info().
-				Any("body", string(response)).
+				Any("body", string(resp)).
 				Msg("响应")
+			return nil
 		}))
 	}
 
-	// 异常处理句柄
-	router.HTTPErrorHandler = func(err error, c echo.Context) {
-		ctx := c.(HttpContext)
+	// 错误处理句柄
+	router.HTTPErrorHandler = func(err error, ctx echo.Context) {
+
 		code := http.StatusInternalServerError
 		if he, ok := err.(*echo.HTTPError); ok {
 			code = he.Code
 		}
-		tip := fmt.Sprintf("%d: %v", code, err)
-		di.Logger.Info().Str("error", tip).Msg("error:")
-		ctx.RespBad(tip)
+
+		di.Logger.Error().
+			Stack().
+			Int("code", code).
+			Err(err).
+			Msg("[HTTP]")
+
+		ctx.JSON(
+			code,
+			map[string]any{
+				"code":    -1,
+				"message": err.Error(),
+			},
+		)
 	}
 	return &HttpSimpleRouter{subject: router}
 }
