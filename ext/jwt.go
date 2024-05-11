@@ -1,4 +1,4 @@
-package mid
+package ext
 
 import (
 	"fmt"
@@ -46,30 +46,4 @@ func ParseJwtToken[T jwt.Claims](ctx echo.Context, claims T) (*jwt.Token, error)
 		return nil, fmt.Errorf("解析 Token 失败, %v, %s", err, tokenString)
 	}
 	return token, nil
-}
-
-func NewJwtAuthMiddleware[T jwt.Claims](provide func() T, onResult func(*jwt.Token, T) error) echo.MiddlewareFunc {
-	key := os.Getenv("CJUNGO_JWT_KEY")
-	if len(key) <= 0 {
-		return func(next echo.HandlerFunc) echo.HandlerFunc {
-			return func(ctx echo.Context) error {
-				return fmt.Errorf("解析 TOKEN 失败，没有配置 CJUNGO_JWT_KEY")
-			}
-		}
-	}
-
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(ctx echo.Context) error {
-			claims := provide()
-			token, err := ParseJwtToken(ctx, claims)
-			if err != nil {
-				return err
-			}
-			if err := onResult(token, claims); err != nil {
-				return fmt.Errorf("自定义 Token 处理返回错误：%v", err)
-			}
-
-			return next(ctx)
-		}
-	}
 }

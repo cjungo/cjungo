@@ -1,8 +1,6 @@
 package mid
 
 import (
-	"sync"
-
 	"github.com/cjungo/cjungo"
 	"github.com/elliotchance/pie/v2"
 	"github.com/labstack/echo/v4"
@@ -18,7 +16,6 @@ type Permission interface {
 
 type PermitManager[T Permission] struct {
 	logger *zerolog.Logger
-	proofs sync.Map
 	handle AuthKeyHandle[T]
 }
 
@@ -34,10 +31,6 @@ func NewPermitManager[T Permission](handle AuthKeyHandle[T]) PermitManagerProvid
 		}
 		return manager, nil
 	}
-}
-
-func (manager *PermitManager[T]) Auth(key string, permissions ...T) {
-	manager.proofs.Store(key, permissions)
 }
 
 func (manager *PermitManager[T]) Permit(permissions ...T) echo.MiddlewareFunc {
