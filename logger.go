@@ -58,7 +58,7 @@ func NewLogger(di NewLoggerDi) *zerolog.Logger {
 	logger := zerolog.New(multiWriter).With().Timestamp().Logger()
 
 	if di.Conf != nil {
-		logger.Info().Msg("日志加载配置")
+		logger.Info().Str("filename", di.Conf.Filename).Msg("日志加载配置")
 	} else {
 		logger.Info().Msg("日志默认配置")
 	}

@@ -1,6 +1,6 @@
 # cjungo
 
-一个框架。
+一个框架。发音“菌GO”，C 是不发音的。类似 django 的 d 不发音一样。
 
 ## [示例](https://github.com/cjungo/demo)
 
