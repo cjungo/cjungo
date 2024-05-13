@@ -1,6 +1,8 @@
 package mid
 
 import (
+	"sync"
+
 	"github.com/cjungo/cjungo"
 	"github.com/elliotchance/pie/v2"
 	"github.com/labstack/echo/v4"
@@ -8,24 +10,25 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
-type AuthKeyHandle[T Permission] func(cjungo.HttpContext) ([]T, error)
-
 type Permission interface {
 	constraints.Integer | string
 }
 
-type PermitManager[T Permission] struct {
+type AuthKeyHandle[TP Permission, TS any] func(cjungo.HttpContext) ([]TP, TS, error)
+
+type PermitManager[TP Permission, TS any] struct {
 	logger *zerolog.Logger
-	handle AuthKeyHandle[T]
+	tokens sync.Map
+	handle AuthKeyHandle[TP, TS]
 }
 
-type PermitManagerProvide[T Permission] func(
+type PermitManagerProvide[TP Permission, TS any] func(
 	logger *zerolog.Logger,
-) (*PermitManager[T], error)
+) (*PermitManager[TP, TS], error)
 
-func NewPermitManager[T Permission](handle AuthKeyHandle[T]) PermitManagerProvide[T] {
-	return func(logger *zerolog.Logger) (*PermitManager[T], error) {
-		manager := &PermitManager[T]{
+func NewPermitManager[TP Permission, TS any](handle AuthKeyHandle[TP, TS]) PermitManagerProvide[TP, TS] {
+	return func(logger *zerolog.Logger) (*PermitManager[TP, TS], error) {
+		manager := &PermitManager[TP, TS]{
 			logger: logger,
 			handle: handle,
 		}
@@ -33,20 +36,36 @@ func NewPermitManager[T Permission](handle AuthKeyHandle[T]) PermitManagerProvid
 	}
 }
 
-func (manager *PermitManager[T]) Permit(permissions ...T) echo.MiddlewareFunc {
+func (manager *PermitManager[TP, TS]) GetToken(id string, ts *TS) bool {
+	v, ok := manager.tokens.Load(id)
+	if ok {
+		*ts = v.(TS)
+	}
+	return ok
+}
+
+func (manager *PermitManager[TP, TS]) Permit(permissions ...TP) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			ctx := c.(cjungo.HttpContext)
-			if owned, err := manager.handle(ctx); err != nil {
+			manager.logger.Info().Any("reqID", ctx.GetReqID()).Msg("[PermitManager]")
+			if owned, ts, err := manager.handle(ctx); err != nil {
 				return err
 			} else {
+				reqID := ctx.GetReqID()
+				manager.tokens.Store(reqID, ts)
+				manager.logger.Info().Any("store", ts).Str("id", reqID).Msg("[PermitManager]")
+				defer func() {
+					manager.logger.Info().Any("delete", ts).Str("id", reqID).Msg("[PermitManager]")
+					manager.tokens.Delete(reqID)
+				}()
 				added, _ := pie.Diff(owned, permissions)
 				if len(added) > 0 {
 					return ctx.RespBadF("缺少权限: %v", added)
 				}
-			}
 
-			return next(ctx)
+				return next(ctx)
+			}
 		}
 	}
 }

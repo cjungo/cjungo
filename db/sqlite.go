@@ -17,11 +17,17 @@ type Sqlite struct {
 	*gorm.DB
 }
 
-type SqliteProvide func(*SqliteConf) (*Sqlite, error)
+type SqliteProvide func(*SqliteConf, *zerolog.Logger) (*Sqlite, error)
 
 func NewSqliteHandle(initialize func(*Sqlite) error) SqliteProvide {
-	return func(conf *SqliteConf) (*Sqlite, error) {
-		db, err := gorm.Open(sqlite.Open(conf.Path), &gorm.Config{})
+	return func(conf *SqliteConf, logger *zerolog.Logger) (*Sqlite, error) {
+		db, err := gorm.Open(sqlite.Open(conf.Path), &gorm.Config{
+			DisableForeignKeyConstraintWhenMigrating: true, // 禁止外键生成
+			Logger: &DbLogger{
+				sign:    "[SQLITE]",
+				subject: logger,
+			},
+		})
 
 		if err != nil {
 			return nil, err

@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
 
 type HttpContext interface {
 	echo.Context
+	GetReqID() string
 	RespOk() error
 	Resp(any) error
 	RespBad(any) error
@@ -17,6 +19,7 @@ type HttpContext interface {
 
 type HttpSimpleContext struct {
 	echo.Context
+	reqID string
 }
 
 func (ctx *HttpSimpleContext) RespOk() error {
@@ -59,8 +62,16 @@ func (ctx *HttpSimpleContext) RespBadF(format string, data ...any) error {
 	)
 }
 
+func (ctx *HttpSimpleContext) GetReqID() string {
+	return ctx.reqID
+}
+
 func ResetContext(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(ctx echo.Context) error {
-		return next(&HttpSimpleContext{ctx})
+		id := uuid.New().String()
+		return next(&HttpSimpleContext{
+			Context: ctx,
+			reqID:   id,
+		})
 	}
 }
