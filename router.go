@@ -7,6 +7,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/rs/zerolog"
+	echoSwagger "github.com/swaggo/echo-swagger"
 	"go.uber.org/dig"
 )
 
@@ -121,6 +122,8 @@ func (logger RouterLogger) Write(p []byte) (n int, err error) {
 
 func NewRouter(di NewRouterDi) HttpRouter {
 	router := echo.New()
+	router.GET("/swagger/*", echoSwagger.WrapHandler)
+
 	router.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
 		Format: `{"time":"${time_custom}","id":"${id}","remote_ip":"${remote_ip}",` +
 			`"host":"${host}","method":"${method}","uri":"${uri}","user_agent":"${user_agent}",` +
