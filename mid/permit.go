@@ -14,11 +14,16 @@ type Permission interface {
 	constraints.Integer | string
 }
 
-type AuthKeyHandle[TP Permission, TS any] func(cjungo.HttpContext) ([]TP, TS, error)
+type PermitProof[TP Permission, TS any] interface {
+	GetPermissions() []TP
+	GetToken() TS
+}
+
+type AuthKeyHandle[TP Permission, TS any] func(cjungo.HttpContext) (PermitProof[TP, TS], error)
 
 type PermitManager[TP Permission, TS any] struct {
 	logger *zerolog.Logger
-	tokens sync.Map
+	proofs sync.Map
 	handle AuthKeyHandle[TP, TS]
 }
 
@@ -36,30 +41,37 @@ func NewPermitManager[TP Permission, TS any](handle AuthKeyHandle[TP, TS]) Permi
 	}
 }
 
-func (manager *PermitManager[TP, TS]) GetToken(id string, ts *TS) bool {
-	v, ok := manager.tokens.Load(id)
-	if ok {
-		*ts = v.(TS)
+func (manager *PermitManager[TP, TS]) GetToken(id string) (PermitProof[TP, TS], bool) {
+	if v, ok := manager.proofs.Load(id); ok {
+		return v.(PermitProof[TP, TS]), ok
 	}
-	return ok
+	return nil, false
 }
 
 func (manager *PermitManager[TP, TS]) Permit(permissions ...TP) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			ctx := c.(cjungo.HttpContext)
-			manager.logger.Info().Any("reqID", ctx.GetReqID()).Msg("[PermitManager]")
-			if owned, ts, err := manager.handle(ctx); err != nil {
+			reqID := ctx.GetReqID()
+			manager.logger.Info().Any("reqID", reqID).Msg("[PermitManager]")
+			if pp, ok := manager.proofs.Load(reqID); ok {
+				ppps := pp.(PermitProof[TP, TS]).GetPermissions()
+				added, _ := pie.Diff(ppps, permissions)
+				if len(added) > 0 {
+					return ctx.RespBadF("缺少权限: %v", added)
+				}
+				return next(ctx)
+			}
+			if pp, err := manager.handle(ctx); err != nil {
 				return err
 			} else {
-				reqID := ctx.GetReqID()
-				manager.tokens.Store(reqID, ts)
-				manager.logger.Info().Any("store", ts).Str("id", reqID).Msg("[PermitManager]")
+				manager.proofs.Store(reqID, pp)
+				manager.logger.Info().Any("store", pp).Str("id", reqID).Msg("[PermitManager]")
 				defer func() {
-					manager.logger.Info().Any("delete", ts).Str("id", reqID).Msg("[PermitManager]")
-					manager.tokens.Delete(reqID)
+					manager.logger.Info().Any("delete", pp).Str("id", reqID).Msg("[PermitManager]")
+					manager.proofs.Delete(reqID)
 				}()
-				added, _ := pie.Diff(owned, permissions)
+				added, _ := pie.Diff(pp.GetPermissions(), permissions)
 				if len(added) > 0 {
 					return ctx.RespBadF("缺少权限: %v", added)
 				}
