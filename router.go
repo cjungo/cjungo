@@ -1,6 +1,7 @@
 package cjungo
 
 import (
+	"fmt"
 	"io/fs"
 	"net/http"
 
@@ -123,10 +124,6 @@ func (logger RouterLogger) Write(p []byte) (n int, err error) {
 func NewRouter(di NewRouterDi) HttpRouter {
 	router := echo.New()
 
-	if di.Conf != nil && di.Conf.IsSwag {
-		router.GET("/swagger/*", echoSwagger.WrapHandler)
-	}
-
 	router.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
 		Format: `{"time":"${time_custom}","id":"${id}","remote_ip":"${remote_ip}",` +
 			`"host":"${host}","method":"${method}","uri":"${uri}","user_agent":"${user_agent}",` +
@@ -181,5 +178,12 @@ func NewRouter(di NewRouterDi) HttpRouter {
 			},
 		)
 	}
+
+	if di.Conf != nil && di.Conf.IsSwag {
+		link := fmt.Sprintf("http://%s:%d/swagger/", *di.Conf.Host, *di.Conf.Port)
+		router.GET("/swagger/*", echoSwagger.WrapHandler)
+		di.Logger.Info().Str("link", link).Msg("[SWAG]")
+	}
+
 	return &HttpSimpleRouter{subject: router}
 }

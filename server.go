@@ -79,7 +79,10 @@ func NewHttpServer(di NewHttpServerDi) *http.Server {
 
 func LoadHttpServerConfFromEnv(logger *zerolog.Logger) (*HttpServerConf, error) {
 	logger.Info().Msg("通过环境变量配置服务器")
-	conf := &HttpServerConf{}
+	conf := &HttpServerConf{
+		IsDumpBody: true,
+		IsSwag:     true,
+	}
 	host := os.Getenv("CJUNGO_HTTP_HOST")
 	if len(host) > 0 {
 		conf.Host = &host
