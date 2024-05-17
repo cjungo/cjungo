@@ -122,7 +122,10 @@ func (logger RouterLogger) Write(p []byte) (n int, err error) {
 
 func NewRouter(di NewRouterDi) HttpRouter {
 	router := echo.New()
-	router.GET("/swagger/*", echoSwagger.WrapHandler)
+
+	if di.Conf != nil && di.Conf.IsSwag {
+		router.GET("/swagger/*", echoSwagger.WrapHandler)
+	}
 
 	router.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
 		Format: `{"time":"${time_custom}","id":"${id}","remote_ip":"${remote_ip}",` +

@@ -18,6 +18,7 @@ type HttpServerConf struct {
 	WriteTimeout   *time.Duration
 	MaxHeaderBytes *int
 	IsDumpBody     bool
+	IsSwag         bool
 }
 
 type NewHttpServerDi struct {
@@ -40,6 +41,8 @@ func NewHttpServer(di NewHttpServerDi) *http.Server {
 			ReadTimeout:    &defaultReadTimeout,
 			WriteTimeout:   &defaultWriteTimeout,
 			MaxHeaderBytes: &defaultMaxHeaderBytes,
+			IsDumpBody:     true,
+			IsSwag:         true,
 		}
 		di.Logger.Info().Msg("服务器使用默认配置")
 	} else {
@@ -105,6 +108,12 @@ func LoadHttpServerConfFromEnv(logger *zerolog.Logger) (*HttpServerConf, error) 
 
 	if err := GetEnvBool("CJUNGO_HTTP_IS_DUMP_BODY", func(v bool) {
 		conf.IsDumpBody = v
+	}); err != nil {
+		return nil, err
+	}
+
+	if err := GetEnvBool("CJUNGO_HTTP_IS_SWAG", func(v bool) {
+		conf.IsSwag = v
 	}); err != nil {
 		return nil, err
 	}
