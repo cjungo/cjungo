@@ -9,6 +9,7 @@ import (
 
 type Application struct {
 	container DiContainer
+	BeforeRun func(DiContainer) error
 }
 
 type ApplicationInitHandle func(container DiContainer) error
@@ -39,6 +40,7 @@ func NewApplication(handle ApplicationInitHandle) (*Application, error) {
 
 	return &Application{
 		container: container,
+		BeforeRun: func(_ DiContainer) error { return nil },
 	}, nil
 }
 
@@ -51,6 +53,12 @@ type ApplicationRunDi struct {
 
 func (app *Application) Run() error {
 	return app.container.Invoke(func(di ApplicationRunDi) error {
+		// 前切入点
+		if err := app.BeforeRun(app.container); err != nil {
+			return err
+		}
+
+		// 队列服务
 		if di.Queue != nil {
 			di.Logger.Info().Msg("启动队列...")
 			err := di.Queue.Run()
