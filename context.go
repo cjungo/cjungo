@@ -26,8 +26,8 @@ func (ctx *HttpSimpleContext) RespOk() error {
 	return ctx.JSON(
 		http.StatusOK,
 		map[string]any{
-			"code":    0,
-			"message": "Ok",
+			"code": 0,
+			"data": "Ok",
 		},
 	)
 }
