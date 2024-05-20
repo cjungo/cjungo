@@ -23,10 +23,11 @@ func NewCaptchaController(
 func (controller *CaptchaController) GenerateMath(ctx cjungo.HttpContext) error {
 	store := base64Captcha.DefaultMemStore
 	driver := &base64Captcha.DriverMath{
-		Height:          100,
-		Width:           400,
-		NoiseCount:      4,
-		ShowLineOptions: base64Captcha.OptionShowHollowLine | base64Captcha.OptionShowSlimeLine | base64Captcha.OptionShowSineLine,
+		Height:     100,
+		Width:      400,
+		NoiseCount: 1,
+		// ShowLineOptions: base64Captcha.OptionShowHollowLine | base64Captcha.OptionShowSlimeLine | base64Captcha.OptionShowSineLine,
+		ShowLineOptions: base64Captcha.OptionShowHollowLine,
 		Fonts: []string{
 			"wqy-microhei.ttc",
 			"Comismsh.ttf",
