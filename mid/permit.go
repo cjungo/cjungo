@@ -41,8 +41,8 @@ func NewPermitManager[TP Permission, TS any](handle AuthKeyHandle[TP, TS]) Permi
 	}
 }
 
-func (manager *PermitManager[TP, TS]) GetToken(id string) (PermitProof[TP, TS], bool) {
-	if v, ok := manager.proofs.Load(id); ok {
+func (manager *PermitManager[TP, TS]) GetProof(ctx cjungo.HttpContext) (PermitProof[TP, TS], bool) {
+	if v, ok := manager.proofs.Load(ctx.GetReqID()); ok {
 		return v.(PermitProof[TP, TS]), ok
 	}
 	return nil, false
