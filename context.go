@@ -3,6 +3,7 @@ package cjungo
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -11,6 +12,7 @@ import (
 type HttpContext interface {
 	echo.Context
 	GetReqID() string
+	GetReqAt() time.Time
 	RespOk() error
 	Resp(any) error
 	RespBad(any) error
@@ -20,6 +22,7 @@ type HttpContext interface {
 type HttpSimpleContext struct {
 	echo.Context
 	reqID string
+	reqAt time.Time
 }
 
 func (ctx *HttpSimpleContext) RespOk() error {
@@ -66,12 +69,18 @@ func (ctx *HttpSimpleContext) GetReqID() string {
 	return ctx.reqID
 }
 
+func (ctx *HttpSimpleContext) GetReqAt() time.Time {
+	return ctx.reqAt
+}
+
 func ResetContext(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(ctx echo.Context) error {
 		id := uuid.New().String()
+		now := time.Now()
 		return next(&HttpSimpleContext{
 			Context: ctx,
 			reqID:   id,
+			reqAt:   now,
 		})
 	}
 }

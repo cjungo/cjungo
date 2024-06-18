@@ -40,11 +40,12 @@ func NewEtcdDiscovery(di EtcdDiscoveryDi) (*EtcdDiscovery, error) {
 	if di.Conf == nil {
 		di.Conf = &EtcdDiscoveryConf{
 			Endpoints:   []string{"localhost:2379"},
-			DialTimeout: 40 * time.Second,
+			DialTimeout: 4 * time.Second,
 		}
 		di.Logger.Info().Str("action", "启用默认配置").Msg("[ETCD]")
 	}
 
+	di.Logger.Info().Str("action", "初始化开始").Msg("[ETCD]")
 	client, err := clientv3.New(
 		clientv3.Config{
 			Endpoints:   di.Conf.Endpoints,
@@ -54,7 +55,7 @@ func NewEtcdDiscovery(di EtcdDiscoveryDi) (*EtcdDiscovery, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	di.Logger.Info().Str("action", "初始化完成").Msg("[ETCD]")
 	return &EtcdDiscovery{
 		client:     client,
 		serverList: sync.Map{},
@@ -159,7 +160,7 @@ func NewEtcdRegister(di EtcdRegisterDi) (*EtcdRegister, error) {
 			Msg("[ETCD]")
 		di.Conf = &EtcdRegisterConf{
 			Endpoints:   []string{"localhost:2379"},
-			DialTimeout: 40 * time.Second,
+			DialTimeout: 4 * time.Second,
 		}
 	}
 
@@ -187,17 +188,40 @@ type EtcdLeasePair struct {
 }
 
 func (register *EtcdRegister) RegisterPair(pair EtcdPair, ttl int64) (*EtcdLeasePair, error) {
+	register.Logger.Info().
+		Str("action", "注册开始").
+		Any("pair", pair).
+		Msg("[ETCD]")
+
 	lease, err := register.client.Grant(context.Background(), ttl)
 	if err != nil {
 		return nil, err
 	}
+
+	register.Logger.Info().
+		Str("action", "租约完成").
+		Any("pair", pair).
+		Msg("[ETCD]")
+
 	if _, err := register.client.Put(context.Background(), pair.Key, pair.Value, clientv3.WithLease(lease.ID)); err != nil {
 		return nil, err
 	}
+
+	register.Logger.Info().
+		Str("action", "注册完成").
+		Any("pair", pair).
+		Msg("[ETCD]")
+
 	leaseChan, err := register.client.KeepAlive(context.Background(), lease.ID)
 	if err != nil {
 		return nil, err
 	}
+
+	register.Logger.Info().
+		Str("action", "注册保持").
+		Any("pair", pair).
+		Msg("[ETCD]")
+
 	return &EtcdLeasePair{
 		EtcdPair:      pair,
 		KeepAliveChan: leaseChan,
