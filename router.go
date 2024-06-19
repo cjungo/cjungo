@@ -21,6 +21,7 @@ type HttpRouterGroup interface {
 	POST(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
 	GET(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
 	PUT(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
+	DELETE(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
 	Group(prefix string, m ...echo.MiddlewareFunc) (g HttpRouterGroup)
 	Use(middleware ...echo.MiddlewareFunc)
 }
@@ -53,6 +54,10 @@ func (router *HttpSimpleRouter) PUT(path string, h HttpHandlerFunc, m ...echo.Mi
 
 func (router *HttpSimpleRouter) POST(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
 	return router.subject.POST(path, wrapContext(h), m...)
+}
+
+func (router *HttpSimpleRouter) DELETE(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
+	return router.subject.DELETE(path, wrapContext(h), m...)
 }
 
 func (router *HttpSimpleRouter) Any(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) []*echo.Route {
@@ -96,6 +101,10 @@ func (group *HttpSimpleGroup) PUT(path string, h HttpHandlerFunc, m ...echo.Midd
 
 func (group *HttpSimpleGroup) POST(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
 	return group.subject.POST(path, wrapContext(h), m...)
+}
+
+func (group *HttpSimpleGroup) DELETE(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
+	return group.subject.DELETE(path, wrapContext(h), m...)
 }
 
 func (group *HttpSimpleGroup) Group(prefix string, m ...echo.MiddlewareFunc) (g HttpRouterGroup) {
@@ -146,12 +155,14 @@ func NewRouter(di NewRouterDi) HttpRouter {
 		router.Use(NewDumpBodyMiddleware(func(ctx HttpContext, req, resp []byte) error {
 			di.Logger.Info().
 				Str("body", string(req)).
-				Msg("请求")
+				Str("action", "打印请求内容").
+				Msg("[HTTP]")
 
 			// TODO 当启用 GZIP 压缩时，信息在日志中是压缩后的数据
 			di.Logger.Info().
 				Any("body", string(resp)).
-				Msg("响应")
+				Str("action", "打印响应内容").
+				Msg("[HTTP]")
 			return nil
 		}))
 	}
