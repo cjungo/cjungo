@@ -16,7 +16,7 @@ type Permission interface {
 
 type PermitProof[TP Permission, TS any] interface {
 	GetPermissions() []TP
-	GetToken() TS
+	GetStore() TS
 }
 
 type AuthKeyHandle[TP Permission, TS any] func(cjungo.HttpContext) (PermitProof[TP, TS], error)
