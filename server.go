@@ -44,9 +44,9 @@ func NewHttpServer(di NewHttpServerDi) *http.Server {
 			IsDumpBody:     true,
 			IsSwag:         true,
 		}
-		di.Logger.Info().Msg("服务器使用默认配置")
+		di.Logger.Info().Str("action", "服务器使用默认配置").Msg("[HTTP]")
 	} else {
-		di.Logger.Info().Msg("服务器加载配置")
+		di.Logger.Info().Str("action", "服务器加载配置").Msg("[HTTP]")
 	}
 	host := GetOrDefault(di.Conf.Host, defaultHost)
 	port := GetOrDefault(di.Conf.Port, defaultPort)
@@ -59,14 +59,15 @@ func NewHttpServer(di NewHttpServerDi) *http.Server {
 	if e := di.Handler.(*echo.Echo); e != nil {
 		for i, r := range e.Routes() {
 			di.Logger.Info().
+				Str("action", "启用路由").
 				Int("index", i).
 				Str("name", r.Name).
 				Str("path", r.Path).
 				Str("method", r.Method).
-				Msg("启用路由")
+				Msg("[HTTP]")
 		}
 	}
-	di.Logger.Info().Str("address", address).Msg("服务器监听:")
+	di.Logger.Info().Str("action", "服务器监听").Str("address", address).Msg("[HTTP]")
 
 	return &http.Server{
 		Addr:           address,
@@ -78,7 +79,7 @@ func NewHttpServer(di NewHttpServerDi) *http.Server {
 }
 
 func LoadHttpServerConfFromEnv(logger *zerolog.Logger) (*HttpServerConf, error) {
-	logger.Info().Msg("通过环境变量配置服务器")
+	logger.Info().Str("action", "通过环境变量配置服务器").Msg("[HTTP]")
 	conf := &HttpServerConf{
 		IsDumpBody: true,
 		IsSwag:     true,

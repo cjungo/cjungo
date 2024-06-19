@@ -73,7 +73,7 @@ func (queue *TaskQueue) setStatus(action *TaskAction, status TaskStatus) {
 		r.(*TaskResult).Status = status
 		queue.results.Store(action.ID, r)
 	} else {
-		queue.Logger.Error().Str("任务", action.Name).Str("Id", action.ID).Msg("没有该任务的状态信息")
+		queue.Logger.Error().Str("name", action.Name).Str("id", action.ID).Str("action", "没有该任务的状态信息").Msg("[TASK]")
 	}
 }
 
@@ -82,20 +82,20 @@ func (queue *TaskQueue) setData(action *TaskAction, data TaskResultMessage) {
 		r.(*TaskResult).Data = data
 		queue.results.Store(action.ID, r)
 	} else {
-		queue.Logger.Error().Str("任务", action.Name).Str("Id", action.ID).Msg("没有该任务的状态信息")
+		queue.Logger.Error().Str("name", action.Name).Str("id", action.ID).Str("action", "没有该任务的状态信息").Msg("[TASK]")
 	}
 }
 
 func (queue *TaskQueue) Run() error {
 	go func() {
-		queue.Logger.Info().Msg("队列启动")
+		queue.Logger.Info().Str("action", "队列启动").Msg("[TASK]")
 
 		for action := range queue.unprocessed {
 
 			process, ok := queue.processes.Load(action.Name)
 
 			if !ok {
-				queue.Logger.Error().Str("任务", action.Name).Str("Id", action.ID).Msg("没有该类型的处理器")
+				queue.Logger.Error().Str("name", action.Name).Str("id", action.ID).Str("action", "没有该类型的处理器").Msg("[TASK]")
 				queue.setStatus(action, TASK_STATUS_NOT_HAVE_PROCESS)
 				continue
 			}
@@ -106,21 +106,23 @@ func (queue *TaskQueue) Run() error {
 			if err != nil {
 				queue.setStatus(action, TASK_STATUS_FAILED)
 				queue.Logger.Error().
-					Str("任务", action.Name).
-					Str("Id", action.ID).
-					Any("结果", data).
-					AnErr("错误", err).
-					Msg("任务处理出错")
+					Str("action", "任务处理出错").
+					Str("name", action.Name).
+					Str("id", action.ID).
+					Any("result", data).
+					AnErr("error", err).
+					Msg("[TASK]")
 			}
 			queue.setStatus(action, TASK_STATUS_OK)
 			queue.Logger.Info().
-				Str("任务", action.Name).
-				Str("Id", action.ID).
-				Any("结果", data).
-				Msg("完成任务")
+				Str("action", "完成任务").
+				Str("name", action.Name).
+				Str("id", action.ID).
+				Any("result", data).
+				Msg("[TASK]")
 		}
 
-		queue.Logger.Info().Msg("队列关闭")
+		queue.Logger.Info().Str("action", "队列关闭").Msg("[TASK]")
 	}()
 	return nil
 }
@@ -157,7 +159,7 @@ func (queue *TaskQueue) QueryTask(id string) (*TaskResult, error) {
 }
 
 func LoadTaskConfFromEnv(logger *zerolog.Logger) (*TaskConfig, error) {
-	logger.Info().Msg("通过环境变量配置任务队列")
+	logger.Info().Str("action", "通过环境变量配置任务队列").Msg("[TASK]")
 	conf := &TaskConfig{}
 	return conf, nil
 }

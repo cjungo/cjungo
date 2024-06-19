@@ -4,8 +4,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/rs/zerolog"
 	"github.com/glebarez/sqlite"
+	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
 
@@ -41,7 +41,7 @@ func NewSqliteHandle(initialize func(*Sqlite) error) SqliteProvide {
 
 func LoadSqliteConfFormEnv(logger *zerolog.Logger) (*SqliteConf, error) {
 	conf := &SqliteConf{}
-	logger.Info().Msg("SQLITE 通过环境变量加载配置")
+	logger.Info().Str("action", "通过环境变量加载配置").Msg("[SQLITE]")
 	path := os.Getenv("CJUNGO_SQLITE_PATH")
 	if len(path) == 0 {
 		wd, err := os.Getwd()
@@ -49,12 +49,12 @@ func LoadSqliteConfFormEnv(logger *zerolog.Logger) (*SqliteConf, error) {
 			return nil, err
 		}
 		conf.Path = filepath.Join(wd, "cjungo.db")
-		logger.Info().Msg("SQLITE 使用默认配置")
+		logger.Info().Str("action", "使用默认配置").Msg("[SQLITE]")
 	} else {
 		conf.Path = path
 	}
 
-	logger.Info().Str("path", conf.Path).Msg("SQLITE 配置")
+	logger.Info().Str("path", conf.Path).Str("action", "配置").Msg("[SQLITE]")
 
 	return conf, nil
 }

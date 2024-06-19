@@ -60,15 +60,15 @@ func (app *Application) Run() error {
 
 		// 队列服务
 		if di.Queue != nil {
-			di.Logger.Info().Msg("启动队列...")
+			di.Logger.Info().Str("action", "启动队列...").Msg("[TASK]")
 			err := di.Queue.Run()
 			if err != nil {
 				return err
 			}
 		} else {
-			di.Logger.Info().Msg("没有启动队列")
+			di.Logger.Info().Str("action", "没有启动队列").Msg("[TASK]")
 		}
-		di.Logger.Info().Msg("启动服务器")
+		di.Logger.Info().Str("action", "启动服务器").Msg("[HTTP]")
 		return di.Server.ListenAndServe()
 	})
 }

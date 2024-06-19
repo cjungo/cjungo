@@ -63,7 +63,7 @@ func NewMySqlHandle(initialize func(*MySql) error) MySqlProvide {
 func LoadMySqlConfFormEnv(logger *zerolog.Logger) (*MySqlConf, error) {
 	conf := &MySqlConf{}
 
-	logger.Info().Msg("MYSQL 通过环境变量加载配置")
+	logger.Info().Str("action", "通过环境变量加载配置").Msg("[MYSQL]")
 
 	if err := cjungo.GetEnvStringMust("CJUNGO_MYSQL_HOST", func(v string) {
 		conf.Host = v
@@ -77,7 +77,7 @@ func LoadMySqlConfFormEnv(logger *zerolog.Logger) (*MySqlConf, error) {
 		return nil, err
 	} else {
 		conf.Port = 3306
-		logger.Info().Msg("MySql 使用默认端口")
+		logger.Info().Str("action", "使用默认端口").Msg("[MYSQL]")
 	}
 
 	if err := cjungo.GetEnvStringMust("CJUNGO_MYSQL_USER", func(v string) {
