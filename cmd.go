@@ -1,76 +1,65 @@
 package cjungo
 
 import (
+	"fmt"
+	"os"
 	"reflect"
+	"runtime"
 
 	"github.com/rs/zerolog"
 	"go.uber.org/dig"
 )
 
-// TODO 设计太差
-type Command interface {
-	Init(container DiContainer) error
-	Exec(container DiContainer) error
-}
+func RunCommand(
+	runner any,
+	providers ...any,
+) error {
+	name := GetFuncName(runner)
+	logPath := fmt.Sprintf("./log/%s.log", name)
+	os.Setenv("CJUNGO_LOG_FILENAME", logPath)
+	if err := LoadEnv(); err != nil {
+		return err
+	}
 
-type CommandRunner struct {
-	container DiContainer
-	commands  []Command
-}
-
-func NewCommand(commands ...Command) (*CommandRunner, error) {
 	container := &DiSimpleContainer{
 		Container: dig.New(),
 	}
 	// 日志
-	if err := container.Provide(NewLogger); err != nil {
-		return nil, err
+	if err := container.Provides(NewLogger, LoadLoggerConfFromEnv); err != nil {
+		return err
 	}
 
-	return &CommandRunner{
-		container: container,
-		commands:  commands,
-	}, nil
+	// 提供
+	if err := container.Provides(providers...); err != nil {
+		return err
+	}
+
+	return container.Invoke(func(logger *zerolog.Logger) error {
+		logger.
+			Info().
+			Str("action", "开始").
+			Str("name", name).
+			Msg("[CMD]")
+		if err := container.Invoke(runner); err != nil {
+			return err
+		}
+		logger.
+			Info().
+			Str("action", "完成").
+			Str("name", name).
+			Msg("[CMD]")
+		return nil
+	})
 }
 
-func (runner *CommandRunner) AddCommand(command Command) {
-	runner.commands = append(runner.commands, command)
+func GetFuncName(v any) string {
+	return runtime.FuncForPC(reflect.ValueOf(v).Pointer()).Name()
 }
 
-func getTypeName(v any) string {
+func GetTypeName(v any) string {
 	if t := reflect.TypeOf(v); t.Kind() == reflect.Ptr {
 		return t.Elem().Name()
 	} else {
 		return t.Name()
 	}
-}
-
-func (runner *CommandRunner) Run() error {
-	return runner.container.Invoke(func(logger *zerolog.Logger) error {
-		logger.Info().Str("action", "开始").Msg("[CMD]")
-		// 初始化
-		for _, command := range runner.commands {
-			name := getTypeName(command)
-			logger.Info().
-				Str("action", "初始化").
-				Str("name", name).
-				Msg("[CMD]")
-			if err := command.Init(runner.container); err != nil {
-				return err
-			}
-		}
-
-		// 调用
-		for _, command := range runner.commands {
-			name := getTypeName(command)
-			logger.Info().
-				Str("action", "执行").
-				Str("name", name).
-				Msg("[CMD]")
-			if err := command.Exec(runner.container); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
 }
