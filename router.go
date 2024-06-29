@@ -169,25 +169,28 @@ func NewRouter(di NewRouterDi) HttpRouter {
 
 	// 错误处理句柄
 	router.HTTPErrorHandler = func(err error, ctx echo.Context) {
-
-		code := http.StatusInternalServerError
-		if he, ok := err.(*echo.HTTPError); ok {
-			code = he.Code
+		var result *ApiError
+		if apiError, ok := err.(*ApiError); ok {
+			result = apiError
+		} else {
+			result = &ApiError{
+				Code:     -1,
+				Message:  err.Error(),
+				HttpCode: http.StatusInternalServerError,
+				Reason:   err,
+			}
+			if httpError, ok := err.(*echo.HTTPError); ok {
+				result.HttpCode = httpError.Code
+			}
 		}
 
 		di.Logger.Error().
 			Stack().
-			Int("code", code).
+			Int("code", result.HttpCode).
 			Err(err).
 			Msg("[HTTP]")
 
-		ctx.JSON(
-			code,
-			map[string]any{
-				"code":    -1,
-				"message": err.Error(),
-			},
-		)
+		ctx.JSON(result.HttpCode, result)
 	}
 
 	if di.Conf != nil && di.Conf.IsSwag {
