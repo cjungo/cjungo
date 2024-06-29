@@ -3,8 +3,10 @@ package cjungo
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 
 	"github.com/rs/zerolog"
 	"go.uber.org/dig"
@@ -15,6 +17,13 @@ func RunCommand(
 	providers ...any,
 ) error {
 	name := GetFuncName(runner)
+	if strings.HasSuffix(name, ".main.func1") {
+		if _, file, _, ok := runtime.Caller(1); ok {
+			name = filepath.Base(filepath.Dir(file))
+		} else {
+			return fmt.Errorf("闭包任务获取目录名失败。")
+		}
+	}
 	logPath := fmt.Sprintf("./log/%s.log", name)
 	os.Setenv("CJUNGO_LOG_FILENAME", logPath)
 	if err := LoadEnv(); err != nil {
