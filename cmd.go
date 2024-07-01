@@ -8,11 +8,12 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/jessevdk/go-flags"
 	"github.com/rs/zerolog"
 	"go.uber.org/dig"
 )
 
-func RunCommand(
+func RunCommand[T any](
 	runner any,
 	providers ...any,
 ) error {
@@ -40,6 +41,20 @@ func RunCommand(
 
 	// 提供
 	if err := container.Provides(providers...); err != nil {
+		return err
+	}
+
+	// 参数
+	if err := container.Provide(func() (*T, error) {
+		var args T
+		if _, err := flags.ParseArgs(&args, os.Args); err != nil {
+			if fe, ok := err.(*flags.Error); ok && fe.Type == flags.ErrHelp {
+				return &args, nil
+			}
+			return nil, err
+		}
+		return &args, nil
+	}); err != nil {
 		return err
 	}
 
