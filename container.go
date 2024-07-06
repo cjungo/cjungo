@@ -15,8 +15,8 @@ type DiSimpleContainer struct {
 	*dig.Container
 }
 
-func (container *DiSimpleContainer) Provides(controllers ...any) error {
-	for _, c := range controllers {
+func (container *DiSimpleContainer) Provides(providers ...any) error {
+	for _, c := range providers {
 		if err := container.Provide(c); err != nil {
 			return err
 		}
