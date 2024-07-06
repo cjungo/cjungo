@@ -27,6 +27,10 @@ type MySqlProvide func(*MySqlConf, *zerolog.Logger) (*MySql, error)
 
 func NewMySqlHandle(initialize func(*MySql) error) MySqlProvide {
 	return func(conf *MySqlConf, logger *zerolog.Logger) (*MySql, error) {
+		if err := ensureMysqlDatabase(conf, logger); err != nil {
+			return nil, err
+		}
+
 		dns := fmt.Sprintf(
 			"%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 			conf.User,
@@ -35,13 +39,7 @@ func NewMySqlHandle(initialize func(*MySql) error) MySqlProvide {
 			conf.Port,
 			conf.Name,
 		)
-		db, err := gorm.Open(mysql.Open(dns), &gorm.Config{
-			DisableForeignKeyConstraintWhenMigrating: true, // 禁止外键生成
-			Logger: &DbLogger{
-				sign:    "[MYSQL]",
-				subject: logger,
-			},
-		})
+		db, err := openMysql(dns, logger)
 		if err != nil {
 			return nil, err
 		}
@@ -58,6 +56,34 @@ func NewMySqlHandle(initialize func(*MySql) error) MySqlProvide {
 		result := &MySql{DB: db}
 		return result, initialize(result)
 	}
+}
+
+func openMysql(dns string, logger *zerolog.Logger) (*gorm.DB, error) {
+	return gorm.Open(mysql.Open(dns), &gorm.Config{
+		DisableForeignKeyConstraintWhenMigrating: true, // 禁止外键生成
+		Logger: &DbLogger{
+			sign:    "[MYSQL]",
+			subject: logger,
+		},
+	})
+}
+
+func ensureMysqlDatabase(conf *MySqlConf, logger *zerolog.Logger) error {
+	if len(conf.Name) > 0 {
+		dns := fmt.Sprintf(
+			"%s:%s@tcp(%s:%d)/?charset=utf8mb4&parseTime=True&loc=Local",
+			conf.User,
+			conf.Pass,
+			conf.Host,
+			conf.Port,
+		)
+		db, err := openMysql(dns, logger)
+		if err != nil {
+			return err
+		}
+		return db.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", conf.Name)).Error
+	}
+	return nil
 }
 
 func LoadMySqlConfFormEnv(logger *zerolog.Logger) (*MySqlConf, error) {
