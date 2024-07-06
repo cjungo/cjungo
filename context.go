@@ -45,24 +45,17 @@ func (ctx *HttpSimpleContext) Resp(data any) error {
 	)
 }
 
-func (ctx *HttpSimpleContext) RespBad(data any) error {
-	return ctx.JSON(
-		http.StatusBadRequest,
-		map[string]any{
-			"code": -1,
-			"data": data,
-		},
-	)
+func (ctx *HttpSimpleContext) RespBad(err error) error {
+	return &ApiError{
+		Code:     -1,
+		Message:  err.Error(),
+		HttpCode: http.StatusBadRequest,
+		Reason:   err,
+	}
 }
 
 func (ctx *HttpSimpleContext) RespBadF(format string, data ...any) error {
-	return ctx.JSON(
-		http.StatusBadRequest,
-		map[string]any{
-			"code": -1,
-			"data": fmt.Sprintf(format, data...),
-		},
-	)
+	return ctx.RespBad(fmt.Errorf(format, data...))
 }
 
 func (ctx *HttpSimpleContext) GetReqID() string {
