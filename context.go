@@ -46,6 +46,9 @@ func (ctx *HttpSimpleContext) Resp(data any) error {
 }
 
 func (ctx *HttpSimpleContext) RespBad(err error) error {
+	if apiError, ok := err.(*ApiError); ok {
+		return apiError
+	}
 	return &ApiError{
 		Code:     -1,
 		Message:  err.Error(),
