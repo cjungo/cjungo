@@ -15,7 +15,7 @@ type HttpContext interface {
 	GetReqAt() time.Time
 	RespOk() error
 	Resp(any) error
-	RespBad(any) error
+	RespBad(error) error
 	RespBadF(string, ...any) error
 }
 
