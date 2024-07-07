@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -21,6 +22,22 @@ type MySqlConf struct {
 
 type MySql struct {
 	*gorm.DB
+}
+
+func (mysql *MySql) TransactionSilent(fc func(*gorm.DB) error, opts ...*sql.TxOptions) error {
+	logger, ok := mysql.Logger.(*DbLogger)
+	if !ok {
+		return fmt.Errorf("error of MYSQL logger")
+	}
+	return mysql.Transaction(func(tx *gorm.DB) error {
+		session := tx.Session(&gorm.Session{
+			Logger: &DbSilentLogger{
+				sign:    logger.sign,
+				subject: logger.subject,
+			},
+		})
+		return fc(session)
+	}, opts...)
 }
 
 type MySqlProvide func(*MySqlConf, *zerolog.Logger) (*MySql, error)
