@@ -11,11 +11,21 @@ import (
 	"github.com/h2non/filetype"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
-	"go.uber.org/dig"
 )
 
+type StorageManager struct {
+	logger *zerolog.Logger
+}
+
+func NewStorageManager(
+	logger *zerolog.Logger,
+) *StorageManager {
+	return &StorageManager{
+		logger: logger,
+	}
+}
+
 type StorageConf struct {
-	dig.In
 	PathPrefix       string
 	Dir              string
 	UploadMiddleware []echo.MiddlewareFunc
@@ -23,22 +33,21 @@ type StorageConf struct {
 	QueryMiddleware  []echo.MiddlewareFunc
 }
 
-func StorageFor(
+func (manager *StorageManager) Route(
 	router cjungo.HttpRouter,
-	logger *zerolog.Logger,
 	conf *StorageConf,
 ) *StorageController {
 	controller := &StorageController{
 		pathPrefix: conf.PathPrefix,
 		dir:        conf.Dir,
-		logger:     logger,
+		logger:     manager.logger,
 	}
 	router.GET(conf.PathPrefix, controller.Index, conf.IndexMiddleware...)
 	router.GET(fmt.Sprintf("%s/:filename", conf.PathPrefix), controller.Query, conf.QueryMiddleware...)
 	router.POST(conf.PathPrefix, controller.Upload, conf.UploadMiddleware...)
 	router.POST(fmt.Sprintf("%s/:dir", conf.PathPrefix), controller.Upload, conf.UploadMiddleware...)
 
-	logger.Info().
+	manager.logger.Info().
 		Str("action", "StorageFor").
 		Str("prefix", conf.PathPrefix).
 		Str("dir", conf.Dir).
@@ -87,6 +96,10 @@ func (controller *StorageController) Upload(ctx cjungo.HttpContext) error {
 	if _, err := io.Copy(dst, f); err != nil {
 		return err
 	}
+	controller.logger.Info().
+		Str("action", "Upload").
+		Str("path", dstPath).
+		Msg("[STORAGE]")
 
 	return ctx.RespOk()
 }
@@ -123,9 +136,6 @@ func (controller *StorageController) Query(ctx cjungo.HttpContext) error {
 	}
 
 	ext := strings.Trim(filepath.Ext(path), ".")
-	controller.logger.Info().
-		Str("ext", ext).
-		Msg("[STORAGE]")
 
 	return ctx.Stream(200, filetype.GetType(ext).MIME.Value, f)
 }
