@@ -16,7 +16,7 @@ type MessageKind = string
 type MessageToken interface {
 	constraints.Integer | string
 }
-type MessageControllerProvide[T MessageToken] func(logger *zerolog.Logger) *MessageController[T]
+type MessageControllerProvide[T MessageToken] func(logger *zerolog.Logger) (*MessageController[T], error)
 type MessageAuthAccess[T MessageToken] func(ctx cjungo.HttpContext) (T, error)
 
 type MessageCoder[T MessageToken] interface {
@@ -56,6 +56,22 @@ type MessageClient[T MessageToken] struct {
 	Conn  *websocket.Conn
 }
 
+func (client *MessageClient[T]) Call(coder MessageCoder[T], msg *Message[T]) error {
+	data, err := coder.Encode(msg)
+	if err != nil {
+		return err
+	}
+	return websocket.Message.Send(client.Conn, data)
+}
+
+func (client *MessageClient[T]) Recv(coder MessageCoder[T], msg *Message[T]) error {
+	data := []byte{}
+	if err := websocket.Message.Receive(client.Conn, &data); err != nil {
+		return err
+	}
+	return coder.Decode(msg, data)
+}
+
 type MessageController[T MessageToken] struct {
 	logger      *zerolog.Logger
 	clients     sync.Map
@@ -71,10 +87,7 @@ type MessageControllerProviderConf[T MessageToken] struct {
 
 func ProvideMessageController[T MessageToken](
 	conf *MessageControllerProviderConf[T],
-) (MessageControllerProvide[T], error) {
-	if conf.TokenAccess == nil {
-		return nil, fmt.Errorf("TokenAccess 不可空")
-	}
+) MessageControllerProvide[T] {
 	coder := conf.Coder
 	if coder == nil {
 		coder = &MessageJsonCoder[T]{}
@@ -82,19 +95,18 @@ func ProvideMessageController[T MessageToken](
 
 	return func(
 		logger *zerolog.Logger,
-	) *MessageController[T] {
+	) (*MessageController[T], error) {
+		if conf.TokenAccess == nil {
+			return nil, fmt.Errorf("TokenAccess 不可空")
+		}
 		return &MessageController[T]{
 			logger:      logger,
 			clients:     sync.Map{},
 			groups:      sync.Map{},
 			tokenAccess: conf.TokenAccess,
 			coder:       coder,
-		}
-	}, nil
-}
-
-func MessageJsonEncode() {
-
+		}, nil
+	}
 }
 
 func (controller *MessageController[T]) Dispatch(ctx cjungo.HttpContext) error {
@@ -141,20 +153,8 @@ func (controller *MessageController[T]) Dispatch(ctx cjungo.HttpContext) error {
 			Msg("[MESSAGE]")
 
 		for {
-			data := []byte{}
-			if err := websocket.Message.Receive(conn, &data); err != nil {
-				errChan <- err
-				return
-			}
-
-			controller.logger.Info().
-				Str("action", "receive").
-				Any("token", token).
-				Str("content", string(data)).
-				Msg("[MESSAGE]")
-
 			msg := Message[T]{}
-			if err := controller.coder.Decode(&msg, data); err != nil {
+			if err := client.Recv(controller.coder, &msg); err != nil {
 				errChan <- err
 				return
 			}
@@ -173,17 +173,12 @@ func (controller *MessageController[T]) Dispatch(ctx cjungo.HttpContext) error {
 				}
 			default:
 				if err := controller.sendSingle(&client, &msg); err != nil {
-					data, err := controller.coder.Encode(&Message[T]{
+					if err := client.Call(controller.coder, &Message[T]{
 						ID:   msg.ID,
 						Kind: MESSAGE_ACK,
 						Data: err.Error(),
-					})
-					if err != nil {
+					}); err != nil {
 						errChan <- err
-						return
-					}
-					if err2 := websocket.Message.Send(client.Conn, data); err2 != nil {
-						errChan <- err2
 						return
 					}
 				}
@@ -209,15 +204,7 @@ func (controller *MessageController[T]) sendSingle(from *MessageClient[T], msg *
 		From: from.Token,
 	}
 	MoveField(msg, &response)
-	data, err := controller.coder.Encode(&response)
-	if err != nil {
-		return err
-	}
-	controller.logger.Info().
-		Str("action", "singleSend").
-		Any("data", string(data)).
-		Msg("[MESSAGE]")
-	return websocket.Message.Send(target.Conn, data)
+	return target.Call(controller.coder, &response)
 }
 
 func (controller *MessageController[T]) sendGroup(from *MessageClient[T], msg *Message[T]) error {
@@ -227,10 +214,6 @@ func (controller *MessageController[T]) sendGroup(from *MessageClient[T], msg *M
 	}
 	group := g.([]string)
 	for _, tid := range group {
-		response := Message[T]{
-			From: from.Token,
-		}
-		MoveField(msg, &response)
 		t, ok := controller.clients.Load(tid)
 		if !ok {
 			controller.logger.Error().
@@ -239,12 +222,12 @@ func (controller *MessageController[T]) sendGroup(from *MessageClient[T], msg *M
 				Str("tid", tid).
 				Msg("[MESSAGE]")
 		} else {
-			target := t.(*MessageClient[T])
-			data, err := controller.coder.Encode(&response)
-			if err != nil {
-				return err
+			response := Message[T]{
+				From: from.Token,
 			}
-			if err := websocket.Message.Send(target.Conn, data); err != nil {
+			MoveField(msg, &response)
+			target := t.(*MessageClient[T])
+			if err := target.Call(controller.coder, &response); err != nil {
 				return err
 			}
 		}
