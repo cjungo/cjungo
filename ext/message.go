@@ -19,6 +19,21 @@ type MessageToken interface {
 type MessageControllerProvide[T MessageToken] func(logger *zerolog.Logger) *MessageController[T]
 type MessageAuthAccess[T MessageToken] func(ctx cjungo.HttpContext) (T, error)
 
+type MessageCoder[T MessageToken] interface {
+	Encode(v *Message[T]) ([]byte, error)
+	Decode(v *Message[T], b []byte) error
+}
+
+type MessageJsonCoder[T MessageToken] struct{}
+
+func (coder *MessageJsonCoder[T]) Encode(v *Message[T]) ([]byte, error) {
+	return json.Marshal(v)
+}
+
+func (coder *MessageJsonCoder[T]) Decode(v *Message[T], b []byte) error {
+	return json.Unmarshal(b, &v)
+}
+
 const (
 	MESSAGE_AUTH_TOKEN_HEADER             = "X-Message-Auth-Token"
 	MESSAGE_SINGLE            MessageKind = "SINGLE"
@@ -26,18 +41,14 @@ const (
 	MESSAGE_ACK               MessageKind = "ACK"
 )
 
-type MessageRequest[T MessageToken] struct {
+type Message[T MessageToken] struct {
 	ID     string      `json:"id"`
 	Kind   MessageKind `json:"kind"`
 	TimeAt time.Time   `json:"timeAt"`
-	Data   any         `json:"data,omitempty"`
 	To     T           `json:"to,omitempty"`
 	Group  T           `json:"group,omitempty"`
-}
-
-type MessageResponse[T MessageToken] struct {
-	MessageRequest[T]
-	From T `json:"from"`
+	From   T           `json:"from,omitempty"`
+	Data   any         `json:"data,omitempty"`
 }
 
 type MessageClient[T MessageToken] struct {
@@ -50,11 +61,25 @@ type MessageController[T MessageToken] struct {
 	clients     sync.Map
 	groups      sync.Map
 	tokenAccess MessageAuthAccess[T]
+	coder       MessageCoder[T]
+}
+
+type MessageControllerProviderConf[T MessageToken] struct {
+	TokenAccess MessageAuthAccess[T]
+	Coder       MessageCoder[T]
 }
 
 func ProvideMessageController[T MessageToken](
-	tokenAccess MessageAuthAccess[T],
-) MessageControllerProvide[T] {
+	conf *MessageControllerProviderConf[T],
+) (MessageControllerProvide[T], error) {
+	if conf.TokenAccess == nil {
+		return nil, fmt.Errorf("TokenAccess 不可空")
+	}
+	coder := conf.Coder
+	if coder == nil {
+		coder = &MessageJsonCoder[T]{}
+	}
+
 	return func(
 		logger *zerolog.Logger,
 	) *MessageController[T] {
@@ -62,9 +87,14 @@ func ProvideMessageController[T MessageToken](
 			logger:      logger,
 			clients:     sync.Map{},
 			groups:      sync.Map{},
-			tokenAccess: tokenAccess,
+			tokenAccess: conf.TokenAccess,
+			coder:       coder,
 		}
-	}
+	}, nil
+}
+
+func MessageJsonEncode() {
+
 }
 
 func (controller *MessageController[T]) Dispatch(ctx cjungo.HttpContext) error {
@@ -123,8 +153,8 @@ func (controller *MessageController[T]) Dispatch(ctx cjungo.HttpContext) error {
 				Str("content", string(data)).
 				Msg("[MESSAGE]")
 
-			msg := MessageRequest[T]{}
-			if err := json.Unmarshal(data, &msg); err != nil {
+			msg := Message[T]{}
+			if err := controller.coder.Decode(&msg, data); err != nil {
 				errChan <- err
 				return
 			}
@@ -143,12 +173,10 @@ func (controller *MessageController[T]) Dispatch(ctx cjungo.HttpContext) error {
 				}
 			default:
 				if err := controller.sendSingle(&client, &msg); err != nil {
-					data, err := json.Marshal(&MessageResponse[T]{
-						MessageRequest: MessageRequest[T]{
-							ID:   msg.ID,
-							Kind: MESSAGE_ACK,
-							Data: err.Error(),
-						},
+					data, err := controller.coder.Encode(&Message[T]{
+						ID:   msg.ID,
+						Kind: MESSAGE_ACK,
+						Data: err.Error(),
 					})
 					if err != nil {
 						errChan <- err
@@ -171,17 +199,17 @@ func (controller *MessageController[T]) Dispatch(ctx cjungo.HttpContext) error {
 	return err
 }
 
-func (controller *MessageController[T]) sendSingle(from *MessageClient[T], msg *MessageRequest[T]) error {
+func (controller *MessageController[T]) sendSingle(from *MessageClient[T], msg *Message[T]) error {
 	t, ok := controller.clients.Load(msg.To)
 	if !ok {
 		return fmt.Errorf("无效的目标: %v", msg.To)
 	}
 	target := t.(*MessageClient[T])
-	response := MessageResponse[T]{
+	response := Message[T]{
 		From: from.Token,
 	}
 	MoveField(msg, &response)
-	data, err := json.Marshal(&response)
+	data, err := controller.coder.Encode(&response)
 	if err != nil {
 		return err
 	}
@@ -192,14 +220,14 @@ func (controller *MessageController[T]) sendSingle(from *MessageClient[T], msg *
 	return websocket.Message.Send(target.Conn, data)
 }
 
-func (controller *MessageController[T]) sendGroup(from *MessageClient[T], msg *MessageRequest[T]) error {
+func (controller *MessageController[T]) sendGroup(from *MessageClient[T], msg *Message[T]) error {
 	g, ok := controller.groups.Load(msg.Group)
 	if !ok {
 		return fmt.Errorf("无效的组: %v", msg.To)
 	}
 	group := g.([]string)
 	for _, tid := range group {
-		response := MessageResponse[T]{
+		response := Message[T]{
 			From: from.Token,
 		}
 		MoveField(msg, &response)
@@ -212,7 +240,7 @@ func (controller *MessageController[T]) sendGroup(from *MessageClient[T], msg *M
 				Msg("[MESSAGE]")
 		} else {
 			target := t.(*MessageClient[T])
-			data, err := json.Marshal(&response)
+			data, err := controller.coder.Encode(&response)
 			if err != nil {
 				return err
 			}
