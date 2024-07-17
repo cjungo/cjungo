@@ -8,16 +8,14 @@ import (
 
 	"github.com/cjungo/cjungo"
 	"github.com/rs/zerolog"
-	"golang.org/x/exp/constraints"
 	"golang.org/x/net/websocket"
 )
 
 type MessageKind = string
-type MessageToken interface {
-	constraints.Integer | string
-}
+type MessageToken any
 type MessageControllerProvide[T MessageToken] func(logger *zerolog.Logger) (*MessageController[T], error)
 type MessageAuthAccess[T MessageToken] func(ctx cjungo.HttpContext) (T, error)
+type OnMessageRecv[T MessageToken] func(controller *MessageController[T], client *MessageClient[T], msg *Message[T]) error
 
 type MessageCoder[T MessageToken] interface {
 	Encode(v *Message[T]) ([]byte, error)
@@ -78,11 +76,13 @@ type MessageController[T MessageToken] struct {
 	groups      sync.Map
 	tokenAccess MessageAuthAccess[T]
 	coder       MessageCoder[T]
+	onRecv      OnMessageRecv[T]
 }
 
 type MessageControllerProviderConf[T MessageToken] struct {
 	TokenAccess MessageAuthAccess[T]
 	Coder       MessageCoder[T]
+	OnRecv      OnMessageRecv[T]
 }
 
 func ProvideMessageController[T MessageToken](
@@ -91,6 +91,16 @@ func ProvideMessageController[T MessageToken](
 	coder := conf.Coder
 	if coder == nil {
 		coder = &MessageJsonCoder[T]{}
+	}
+	onRecv := conf.OnRecv
+	if onRecv == nil {
+		onRecv = func(
+			controller *MessageController[T],
+			client *MessageClient[T],
+			msg *Message[T],
+		) error {
+			return nil
+		}
 	}
 
 	return func(
@@ -105,6 +115,7 @@ func ProvideMessageController[T MessageToken](
 			groups:      sync.Map{},
 			tokenAccess: conf.TokenAccess,
 			coder:       coder,
+			onRecv:      onRecv,
 		}, nil
 	}
 }
@@ -152,37 +163,9 @@ func (controller *MessageController[T]) Dispatch(ctx cjungo.HttpContext) error {
 			Any("token", token).
 			Msg("[MESSAGE]")
 
-		for {
-			msg := Message[T]{}
-			if err := client.Recv(controller.coder, &msg); err != nil {
-				errChan <- err
-				return
-			}
-
-			controller.logger.Info().
-				Str("action", "send").
-				Any("token", token).
-				Str("kind", msg.Kind).
-				Msg("[MESSAGE]")
-
-			switch msg.Kind {
-			case MESSAGE_GROUP:
-				if err := controller.sendGroup(&client, &msg); err != nil {
-					errChan <- err
-					return
-				}
-			default:
-				if err := controller.sendSingle(&client, &msg); err != nil {
-					if err := client.Call(controller.coder, &Message[T]{
-						ID:   msg.ID,
-						Kind: MESSAGE_ACK,
-						Data: err.Error(),
-					}); err != nil {
-						errChan <- err
-						return
-					}
-				}
-			}
+		if err := controller.handle(&client); err != nil {
+			errChan <- err
+			return
 		}
 	}).ServeHTTP(ctx.Response(), ctx.Request())
 	err = <-errChan
@@ -192,6 +175,40 @@ func (controller *MessageController[T]) Dispatch(ctx cjungo.HttpContext) error {
 		Any("token", token).
 		Msg("[MESSAGE]")
 	return err
+}
+
+func (controller *MessageController[T]) handle(client *MessageClient[T]) error {
+	for {
+		msg := Message[T]{}
+		if err := client.Recv(controller.coder, &msg); err != nil {
+			return err
+		}
+		if err := controller.onRecv(controller, client, &msg); err != nil {
+			return err
+		}
+		controller.logger.Info().
+			Str("action", "send").
+			Any("token", client.Token).
+			Str("kind", msg.Kind).
+			Msg("[MESSAGE]")
+
+		switch msg.Kind {
+		case MESSAGE_GROUP:
+			if err := controller.sendGroup(client, &msg); err != nil {
+				return err
+			}
+		default:
+			if err := controller.sendSingle(client, &msg); err != nil {
+				if err := client.Call(controller.coder, &Message[T]{
+					ID:   msg.ID,
+					Kind: MESSAGE_ACK,
+					Data: err.Error(),
+				}); err != nil {
+					return err
+				}
+			}
+		}
+	}
 }
 
 func (controller *MessageController[T]) sendSingle(from *MessageClient[T], msg *Message[T]) error {
