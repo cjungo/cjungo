@@ -12,7 +12,7 @@ import (
 )
 
 type MessageKind = string
-type MessageToken any
+type MessageToken = any
 type MessageControllerProvide[T MessageToken] func(logger *zerolog.Logger) (*MessageController[T], error)
 type MessageAuthAccess[T MessageToken] func(ctx cjungo.HttpContext) (T, error)
 type OnMessageRecv[T MessageToken] func(controller *MessageController[T], client *MessageClient[T], msg *Message[T]) error
@@ -94,13 +94,7 @@ func ProvideMessageController[T MessageToken](
 	}
 	onRecv := conf.OnRecv
 	if onRecv == nil {
-		onRecv = func(
-			controller *MessageController[T],
-			client *MessageClient[T],
-			msg *Message[T],
-		) error {
-			return nil
-		}
+		onRecv = defaultOnRecv
 	}
 
 	return func(
@@ -177,6 +171,22 @@ func (controller *MessageController[T]) Dispatch(ctx cjungo.HttpContext) error {
 	return err
 }
 
+func (controller *MessageController[T]) FindClient(token T) (*MessageClient[T], error) {
+	t, ok := controller.clients.Load(token)
+	if !ok {
+		return nil, fmt.Errorf("invalid MessageClient token: %v", token)
+	}
+	return t.(*MessageClient[T]), nil
+}
+
+func (controller *MessageController[T]) FindGroup(group T) ([]T, error) {
+	g, ok := controller.groups.Load(group)
+	if !ok {
+		return nil, fmt.Errorf("invalid MessageClient Group token: %v", group)
+	}
+	return g.([]T), nil
+}
+
 func (controller *MessageController[T]) handle(client *MessageClient[T]) error {
 	for {
 		msg := Message[T]{}
@@ -186,37 +196,15 @@ func (controller *MessageController[T]) handle(client *MessageClient[T]) error {
 		if err := controller.onRecv(controller, client, &msg); err != nil {
 			return err
 		}
-		controller.logger.Info().
-			Str("action", "send").
-			Any("token", client.Token).
-			Str("kind", msg.Kind).
-			Msg("[MESSAGE]")
-
-		switch msg.Kind {
-		case MESSAGE_GROUP:
-			if err := controller.sendGroup(client, &msg); err != nil {
-				return err
-			}
-		default:
-			if err := controller.sendSingle(client, &msg); err != nil {
-				if err := client.Call(controller.coder, &Message[T]{
-					ID:   msg.ID,
-					Kind: MESSAGE_ACK,
-					Data: err.Error(),
-				}); err != nil {
-					return err
-				}
-			}
-		}
 	}
 }
 
 func (controller *MessageController[T]) sendSingle(from *MessageClient[T], msg *Message[T]) error {
-	t, ok := controller.clients.Load(msg.To)
-	if !ok {
-		return fmt.Errorf("无效的目标: %v", msg.To)
+	target, err := controller.FindClient(msg.To)
+	if err != nil {
+		return err
 	}
-	target := t.(*MessageClient[T])
+
 	response := Message[T]{
 		From: from.Token,
 	}
@@ -225,26 +213,54 @@ func (controller *MessageController[T]) sendSingle(from *MessageClient[T], msg *
 }
 
 func (controller *MessageController[T]) sendGroup(from *MessageClient[T], msg *Message[T]) error {
-	g, ok := controller.groups.Load(msg.Group)
-	if !ok {
-		return fmt.Errorf("无效的组: %v", msg.To)
+	group, err := controller.FindGroup(msg.Group)
+	if err != nil {
+		return err
 	}
-	group := g.([]string)
 	for _, tid := range group {
-		t, ok := controller.clients.Load(tid)
-		if !ok {
+		target, err := controller.FindClient(tid)
+		if err != nil {
 			controller.logger.Error().
 				Str("action", "sendGroup").
 				Str("msg", "无效组员ID").
-				Str("tid", tid).
+				Any("tid", tid).
 				Msg("[MESSAGE]")
 		} else {
 			response := Message[T]{
 				From: from.Token,
 			}
 			MoveField(msg, &response)
-			target := t.(*MessageClient[T])
 			if err := target.Call(controller.coder, &response); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func defaultOnRecv[T MessageToken](
+	controller *MessageController[T],
+	client *MessageClient[T],
+	msg *Message[T],
+) error {
+	controller.logger.Info().
+		Str("action", "send").
+		Any("token", client.Token).
+		Str("kind", msg.Kind).
+		Msg("[MESSAGE]")
+
+	switch msg.Kind {
+	case MESSAGE_GROUP:
+		if err := controller.sendGroup(client, msg); err != nil {
+			return err
+		}
+	default:
+		if err := controller.sendSingle(client, msg); err != nil {
+			if err := client.Call(controller.coder, &Message[T]{
+				ID:   msg.ID,
+				Kind: MESSAGE_ACK,
+				Data: err.Error(),
+			}); err != nil {
 				return err
 			}
 		}
