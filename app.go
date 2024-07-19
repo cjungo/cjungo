@@ -18,23 +18,17 @@ func NewApplication(handle ApplicationInitHandle) (*Application, error) {
 	container := &DiSimpleContainer{
 		Container: dig.New(),
 	}
-	// 日志
-	if err := container.Provide(NewLogger); err != nil {
+
+	if err := container.Provides(
+		NewLogger,     // 日志
+		NewRouter,     // 路由
+		NewHttpServer, // 服务器
+	); err != nil {
 		return nil, err
 	}
 
 	// 自定义
 	if err := handle(container); err != nil {
-		return nil, err
-	}
-
-	// 路由
-	if err := container.Provide(NewRouter); err != nil {
-		return nil, err
-	}
-
-	// 服务器
-	if err := container.Provide(NewHttpServer); err != nil {
 		return nil, err
 	}
 
