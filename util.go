@@ -103,3 +103,23 @@ func MinOf[T constraints.Ordered](items ...T) T {
 	}
 	return *result
 }
+
+func Limit[T constraints.Ordered](min T, max T, v T) T {
+	if v > max {
+		return max
+	} else if v < min {
+		return min
+	} else {
+		return v
+	}
+}
+
+func LimitOf[T constraints.Ordered](min T, max T, items ...T) []T {
+	result := []T{}
+	for _, item := range items {
+		if item <= max && item >= min {
+			result = append(result, item)
+		}
+	}
+	return result
+}
