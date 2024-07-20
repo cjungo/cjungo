@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"golang.org/x/exp/constraints"
 )
 
 func GetOrDefault[T any](v *T, d T) T {
@@ -60,4 +62,44 @@ func LimitStr(v string, n int) string {
 		return fmt.Sprintf("%s...", v[:n-3])
 	}
 	return v
+}
+
+func Max[T constraints.Ordered](a T, b T) T {
+	if a > b {
+		return a
+	} else {
+		return b
+	}
+}
+
+func MaxOf[T constraints.Ordered](items ...T) T {
+	var result *T
+	for _, item := range items {
+		if result == nil {
+			result = &item
+		} else if *result < item {
+			result = &item
+		}
+	}
+	return *result
+}
+
+func Min[T constraints.Ordered](a T, b T) T {
+	if a < b {
+		return a
+	} else {
+		return b
+	}
+}
+
+func MinOf[T constraints.Ordered](items ...T) T {
+	var result *T
+	for _, item := range items {
+		if result == nil {
+			result = &item
+		} else if *result > item {
+			result = &item
+		}
+	}
+	return *result
 }
