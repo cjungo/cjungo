@@ -51,8 +51,9 @@ func NewHttpServer(di NewHttpServerDi) *http.Server {
 	host := GetOrDefault(di.Conf.Host, defaultHost)
 	port := GetOrDefault(di.Conf.Port, defaultPort)
 	address := fmt.Sprintf("%s:%d", host, port)
-	readTimeout := GetOrDefault(di.Conf.ReadTimeout, defaultReadTimeout)
-	writeTimeout := GetOrDefault(di.Conf.WriteTimeout, defaultWriteTimeout)
+	// TODO 改用中间件
+	// readTimeout := GetOrDefault(di.Conf.ReadTimeout, defaultReadTimeout)
+	// writeTimeout := GetOrDefault(di.Conf.WriteTimeout, defaultWriteTimeout)
 	maxHeaderBytes := GetOrDefault(di.Conf.MaxHeaderBytes, defaultMaxHeaderBytes)
 
 	// 输出服务器信息
@@ -70,10 +71,11 @@ func NewHttpServer(di NewHttpServerDi) *http.Server {
 	di.Logger.Info().Str("action", "服务器监听").Str("address", address).Msg("[HTTP]")
 
 	return &http.Server{
-		Addr:           address,
-		Handler:        di.Handler,
-		ReadTimeout:    readTimeout,
-		WriteTimeout:   writeTimeout,
+		Addr:    address,
+		Handler: di.Handler,
+		// TODO 改用中间件
+		// ReadTimeout:    readTimeout,
+		// WriteTimeout:   writeTimeout,
 		MaxHeaderBytes: maxHeaderBytes,
 	}
 }
