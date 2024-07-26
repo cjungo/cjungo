@@ -1,9 +1,11 @@
 package cjungo
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"net/http"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -11,6 +13,20 @@ import (
 	echoSwagger "github.com/swaggo/echo-swagger"
 	"go.uber.org/dig"
 )
+
+type SseEventPair struct {
+	Key   string
+	Value string
+}
+
+type SseEvent struct {
+	ID     string
+	Event  string
+	Data   any
+	Others []SseEventPair
+}
+
+type SseDispatch func(ctx HttpContext, tx chan SseEvent, rx chan error)
 
 // TODO 封装 echo.Echo 其他方法
 
@@ -20,6 +36,7 @@ type HttpRouterGroup interface {
 	Any(path string, handler HttpHandlerFunc, middleware ...echo.MiddlewareFunc) []*echo.Route
 	POST(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
 	GET(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
+	SSE(path string, h SseDispatch, m ...echo.MiddlewareFunc) *echo.Route
 	PUT(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
 	DELETE(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
 	Group(prefix string, m ...echo.MiddlewareFunc) (g HttpRouterGroup)
@@ -35,6 +52,7 @@ type HttpRouter interface {
 
 type HttpSimpleRouter struct {
 	subject *echo.Echo
+	logger  *zerolog.Logger
 }
 
 func wrapContext(h HttpHandlerFunc) echo.HandlerFunc {
@@ -44,8 +62,101 @@ func wrapContext(h HttpHandlerFunc) echo.HandlerFunc {
 	}
 }
 
+func writefln(response *echo.Response, format string, args ...any) error {
+	_, err := fmt.Fprintf(response, format, args...)
+	return err
+}
+
+func wrapSse(logger *zerolog.Logger, dispatch SseDispatch) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		ctx := c.(HttpContext)
+
+		reqId := ctx.GetReqID()
+
+		response := ctx.Response()
+		response.Header().Set("Content-Type", "text/event-stream")
+		response.Header().Set("Cache-Control", "no-cache")
+		response.Header().Set("Connection", "keep-alive")
+
+		logger.Info().
+			Str("action", "start").
+			Str("reqId", reqId).
+			Msg("[SSE]")
+
+		tx := make(chan SseEvent)
+		rx := make(chan error)
+		defer close(rx)
+		go func() {
+			dispatch(ctx, tx, rx)
+			close(tx)
+		}()
+		for {
+			select {
+			case <-ctx.Request().Context().Done():
+				logger.Info().
+					Str("action", "done").
+					Str("reqId", reqId).
+					Msg("[SSE]")
+				return nil
+			case msg, ok := <-tx:
+				// 结束
+				if !ok {
+					return nil
+				}
+				logger.Info().
+					Str("action", "tx").
+					Any("msg", msg).
+					Str("reqId", reqId).
+					Msg("[SSE]")
+
+				// 错误
+				if err, ok := msg.Data.(error); ok {
+					return err
+				}
+
+				// 消息
+				pairs := []SseEventPair{}
+				if len(msg.ID) > 0 {
+					pairs = append(pairs, SseEventPair{Key: "id", Value: msg.ID})
+				} else {
+					// time.RFC3339Nano
+					pairs = append(pairs, SseEventPair{Key: "id", Value: time.Now().Format("20060102150405.9999")})
+				}
+				if len(msg.Event) > 0 {
+					pairs = append(pairs, SseEventPair{Key: "event", Value: msg.Event})
+				}
+				if msg.Data != nil {
+					data, err := json.Marshal(msg.Data)
+					if err != nil {
+						return err
+					}
+					pairs = append(pairs, SseEventPair{
+						Key:   "data",
+						Value: string(data),
+					})
+				}
+				pairs = append(pairs, msg.Others...)
+
+				for _, pair := range pairs {
+					if err := writefln(response, "%s: %s\n", pair.Key, pair.Value); err != nil {
+						return err
+					}
+				}
+				if err := writefln(response, "\n"); err != nil {
+					return err
+				}
+				response.Flush()
+			}
+		}
+	}
+}
+
 func (router *HttpSimpleRouter) GET(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
 	return router.subject.GET(path, wrapContext(h), m...)
+}
+
+func (router *HttpSimpleRouter) SSE(path string, h SseDispatch, m ...echo.MiddlewareFunc) *echo.Route {
+	return router.subject.GET(path, wrapSse(router.logger, h), m...)
 }
 
 func (router *HttpSimpleRouter) PUT(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
@@ -65,7 +176,10 @@ func (router *HttpSimpleRouter) Any(path string, h HttpHandlerFunc, m ...echo.Mi
 }
 
 func (router *HttpSimpleRouter) Group(prefix string, m ...echo.MiddlewareFunc) (g HttpRouterGroup) {
-	return &HttpSimpleGroup{subject: router.subject.Group(prefix, m...)}
+	return &HttpSimpleGroup{
+		subject: router.subject.Group(prefix, m...),
+		logger:  router.logger,
+	}
 }
 
 func (router *HttpSimpleRouter) Use(middleware ...echo.MiddlewareFunc) {
@@ -85,6 +199,7 @@ func (router *HttpSimpleRouter) StaticFS(pathPrefix string, filesystem fs.FS) *e
 
 type HttpSimpleGroup struct {
 	subject *echo.Group
+	logger  *zerolog.Logger
 }
 
 func (group *HttpSimpleGroup) Any(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) []*echo.Route {
@@ -93,6 +208,10 @@ func (group *HttpSimpleGroup) Any(path string, h HttpHandlerFunc, m ...echo.Midd
 
 func (group *HttpSimpleGroup) GET(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
 	return group.subject.GET(path, wrapContext(h), m...)
+}
+
+func (group *HttpSimpleGroup) SSE(path string, h SseDispatch, m ...echo.MiddlewareFunc) *echo.Route {
+	return group.subject.GET(path, wrapSse(group.logger, h), m...)
 }
 
 func (group *HttpSimpleGroup) PUT(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
@@ -199,5 +318,8 @@ func NewRouter(di NewRouterDi) HttpRouter {
 		di.Logger.Info().Str("link", link).Msg("[SWAG]")
 	}
 
-	return &HttpSimpleRouter{subject: router}
+	return &HttpSimpleRouter{
+		subject: router,
+		logger:  di.Logger,
+	}
 }
