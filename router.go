@@ -26,17 +26,23 @@ type SseEvent struct {
 	Others []SseEventPair
 }
 
-type SseDispatch func(ctx HttpContext, tx chan SseEvent, rx chan error)
+type SseHandlerFunc func(ctx HttpContext, tx chan SseEvent, rx chan error)
+
+type LongPollingEvent struct {
+	Data []byte
+	Err  error
+}
+type LongPollingHandlerFunc func(ctx HttpContext, tx chan LongPollingEvent, rx chan error)
 
 // TODO 封装 echo.Echo 其他方法
 
-type HttpHandlerFunc func(HttpContext) error
-
+type HttpHandlerFunc func(ctx HttpContext) error
 type HttpRouterGroup interface {
 	Any(path string, handler HttpHandlerFunc, middleware ...echo.MiddlewareFunc) []*echo.Route
 	POST(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
 	GET(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
-	SSE(path string, h SseDispatch, m ...echo.MiddlewareFunc) *echo.Route
+	SSE(path string, h SseHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
+	LongPolling(path string, h LongPollingHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
 	PUT(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
 	DELETE(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route
 	Group(prefix string, m ...echo.MiddlewareFunc) (g HttpRouterGroup)
@@ -62,12 +68,64 @@ func wrapContext(h HttpHandlerFunc) echo.HandlerFunc {
 	}
 }
 
-func writefln(response *echo.Response, format string, args ...any) error {
-	_, err := fmt.Fprintf(response, format, args...)
-	return err
+func wrapLongPolling(logger *zerolog.Logger, h LongPollingHandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		ctx := c.(HttpContext)
+
+		reqId := ctx.GetReqID()
+
+		response := ctx.Response()
+		response.Header().Set("Content-Type", "application/octet-stream")
+		response.Header().Set("Cache-Control", "no-cache")
+		response.Header().Set("Connection", "keep-alive")
+		logger.Info().
+			Str("action", "start").
+			Str("reqId", reqId).
+			Msg("[LONG POLLING]")
+
+		tx := make(chan LongPollingEvent)
+		rx := make(chan error)
+		defer close(rx)
+		go func() {
+			defer close(tx)
+			h(ctx, tx, rx)
+		}()
+
+		for {
+			select {
+			case <-ctx.Request().Context().Done():
+				logger.Info().
+					Str("action", "done").
+					Str("reqId", reqId).
+					Msg("[LONG POLLING]")
+				return nil
+			case msg, ok := <-tx:
+				// 结束
+				if !ok {
+					return nil
+				}
+				logger.Info().
+					Str("action", "tx").
+					Any("msg", msg).
+					Str("reqId", reqId).
+					Msg("[LONG POLLING]")
+
+				// 错误
+				if msg.Err != nil {
+					return msg.Err
+				}
+
+				// 消息
+				if _, err := response.Write(msg.Data); err != nil {
+					rx <- err
+				}
+				response.Flush()
+			}
+		}
+	}
 }
 
-func wrapSse(logger *zerolog.Logger, dispatch SseDispatch) echo.HandlerFunc {
+func wrapSse(logger *zerolog.Logger, h SseHandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx := c.(HttpContext)
 
@@ -87,8 +145,8 @@ func wrapSse(logger *zerolog.Logger, dispatch SseDispatch) echo.HandlerFunc {
 		rx := make(chan error)
 		defer close(rx)
 		go func() {
-			dispatch(ctx, tx, rx)
-			close(tx)
+			defer close(tx)
+			h(ctx, tx, rx)
 		}()
 		for {
 			select {
@@ -128,22 +186,25 @@ func wrapSse(logger *zerolog.Logger, dispatch SseDispatch) echo.HandlerFunc {
 				if msg.Data != nil {
 					data, err := json.Marshal(msg.Data)
 					if err != nil {
-						return err
+						rx <- err
+						continue
+					} else {
+						pairs = append(pairs, SseEventPair{
+							Key:   "data",
+							Value: string(data),
+						})
 					}
-					pairs = append(pairs, SseEventPair{
-						Key:   "data",
-						Value: string(data),
-					})
 				}
 				pairs = append(pairs, msg.Others...)
 
 				for _, pair := range pairs {
-					if err := writefln(response, "%s: %s\n", pair.Key, pair.Value); err != nil {
-						return err
+					if _, err := fmt.Fprintf(response, "%s: %s\n", pair.Key, pair.Value); err != nil {
+						rx <- err
 					}
 				}
-				if err := writefln(response, "\n"); err != nil {
-					return err
+				if _, err := fmt.Fprintf(response, "\n"); err != nil {
+					rx <- err
+					continue
 				}
 				response.Flush()
 			}
@@ -155,8 +216,12 @@ func (router *HttpSimpleRouter) GET(path string, h HttpHandlerFunc, m ...echo.Mi
 	return router.subject.GET(path, wrapContext(h), m...)
 }
 
-func (router *HttpSimpleRouter) SSE(path string, h SseDispatch, m ...echo.MiddlewareFunc) *echo.Route {
+func (router *HttpSimpleRouter) SSE(path string, h SseHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
 	return router.subject.GET(path, wrapSse(router.logger, h), m...)
+}
+
+func (router *HttpSimpleRouter) LongPolling(path string, h LongPollingHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
+	return router.subject.GET(path, wrapLongPolling(router.logger, h), m...)
 }
 
 func (router *HttpSimpleRouter) PUT(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
@@ -210,8 +275,12 @@ func (group *HttpSimpleGroup) GET(path string, h HttpHandlerFunc, m ...echo.Midd
 	return group.subject.GET(path, wrapContext(h), m...)
 }
 
-func (group *HttpSimpleGroup) SSE(path string, h SseDispatch, m ...echo.MiddlewareFunc) *echo.Route {
+func (group *HttpSimpleGroup) SSE(path string, h SseHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
 	return group.subject.GET(path, wrapSse(group.logger, h), m...)
+}
+
+func (group *HttpSimpleGroup) LongPolling(path string, h LongPollingHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
+	return group.subject.GET(path, wrapLongPolling(group.logger, h), m...)
 }
 
 func (group *HttpSimpleGroup) PUT(path string, h HttpHandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
@@ -227,7 +296,10 @@ func (group *HttpSimpleGroup) DELETE(path string, h HttpHandlerFunc, m ...echo.M
 }
 
 func (group *HttpSimpleGroup) Group(prefix string, m ...echo.MiddlewareFunc) (g HttpRouterGroup) {
-	return &HttpSimpleGroup{subject: group.subject.Group(prefix, m...)}
+	return &HttpSimpleGroup{
+		subject: group.subject.Group(prefix, m...),
+		logger:  group.logger,
+	}
 }
 
 func (group *HttpSimpleGroup) Use(middleware ...echo.MiddlewareFunc) {
