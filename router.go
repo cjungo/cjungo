@@ -345,12 +345,16 @@ func NewRouter(di NewRouterDi) HttpRouter {
 	if di.Conf != nil && di.Conf.IsDumpBody {
 		router.Use(NewDumpBodyMiddleware(func(ctx HttpContext, req, resp []byte) error {
 			di.Logger.Info().
+				Str("requestId", ctx.GetReqID()).
+				Str("url", ctx.Request().RequestURI).
 				Str("body", string(req)).
 				Str("action", "打印请求内容").
 				Msg("[HTTP]")
 
 			// TODO 当启用 GZIP 压缩时，信息在日志中是压缩后的数据
 			di.Logger.Info().
+				Str("requestId", ctx.GetReqID()).
+				Str("url", ctx.Request().RequestURI).
 				Any("body", string(resp)).
 				Str("action", "打印响应内容").
 				Msg("[HTTP]")
