@@ -96,12 +96,20 @@ func (controller *StorageController) Upload(ctx cjungo.HttpContext) error {
 	if _, err := io.Copy(dst, f); err != nil {
 		return err
 	}
+
+	dstRelPath, err := filepath.Rel(controller.dir, dstPath)
+	if err != nil {
+		return err
+	}
+	dstUrl := strings.ReplaceAll(fmt.Sprintf("%s/%s", controller.pathPrefix, dstRelPath), "\\", "/")
+
 	controller.logger.Info().
 		Str("action", "Upload").
 		Str("path", dstPath).
+		Str("url", dstUrl).
 		Msg("[STORAGE]")
 
-	return ctx.RespOk()
+	return ctx.Resp(dstUrl)
 }
 
 func (controller *StorageController) Index(ctx cjungo.HttpContext) error {
