@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 
 	"golang.org/x/exp/constraints"
 )
@@ -122,4 +124,32 @@ func LimitOf[T constraints.Ordered](min T, max T, items ...T) []T {
 		}
 	}
 	return result
+}
+
+func IsNilOrEmpty(v *string) bool {
+	return v == nil || *v == ""
+}
+
+func IsNilOrSpace(v *string) bool {
+	return v == nil || strings.TrimSpace(*v) == ""
+}
+
+func IsNil(val any) bool {
+	if val == nil {
+		return true
+	}
+	v := reflect.ValueOf(val)
+	k := v.Kind()
+	switch k {
+	case reflect.Chan,
+		reflect.Func,
+		reflect.Map,
+		reflect.Pointer,
+		reflect.UnsafePointer,
+		reflect.Interface,
+		reflect.Slice:
+		return v.IsNil()
+	}
+
+	return false
 }
