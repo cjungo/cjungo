@@ -30,9 +30,16 @@ func ParseJwtToken[T jwt.Claims](ctx echo.Context, claims T) (*jwt.Token, error)
 		return nil, fmt.Errorf("解析 TOKEN 失败，没有配置 CJUNGO_JWT_KEY")
 	}
 	request := ctx.Request()
+
+	// 优先找 报首： Authorization
 	auth := request.Header.Get("Authorization")
 	if !strings.HasPrefix(auth, "Bearer ") {
-		return nil, fmt.Errorf("不是有效的 JWT token")
+		// 其次找 Cookie: jwt 字段
+		if cookie, err := request.Cookie("jwt"); err != nil {
+			return nil, fmt.Errorf("不是有效的 JWT token: %v", err)
+		} else {
+			auth = cookie.Value
+		}
 	}
 	tokenString := auth[7:]
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (any, error) {
